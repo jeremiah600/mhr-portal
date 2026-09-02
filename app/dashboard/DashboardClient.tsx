@@ -1792,12 +1792,12 @@ export default function DashboardPage() {
                 No budget expense lines found for this department. Switch to New Hires or Certifications to add other budget items.
               </div>
             )}
-            {accounts.length > 0 && <>
-            {/* Column headers */}
+            {accounts.length > 0 && <div className="overflow-x-auto">
+            <div className="min-w-[1200px]">
+            {/* Column headers — must match accordion row grid exactly */}
             <div className="hidden lg:grid text-xs font-bold uppercase tracking-widest text-gray-400 px-4"
-              style={{ gridTemplateColumns: '220px 1fr repeat(12, 72px) 100px 36px' }}>
+              style={{ gridTemplateColumns: '280px repeat(12, 72px) 120px 52px' }}>
               <span>GL / Description</span>
-              <span></span>
               {MONTH_NAMES.map(m => <span key={m} className="text-right">{m}</span>)}
               <span className="text-right">Total</span>
               <span></span>
@@ -1812,38 +1812,67 @@ export default function DashboardPage() {
                 <div key={acct.account_code} className="bg-white rounded-lg border shadow-sm overflow-hidden"
                   style={{ borderColor: isExpanded ? '#316c7f' : '#e5e7eb' }}>
 
-                  {/* Accordion header */}
+                  {/* Accordion header — same grid as column headers above */}
                   <button onClick={() => toggleExpand(acct.account_code)}
-                    className="w-full text-left px-4 py-3 flex items-center gap-3 transition-colors hover:bg-blue-50/40"
-                    style={{ background: isExpanded ? 'rgba(49,108,127,.05)' : 'white' }}>
-                    <span className="font-mono text-xs font-semibold text-gray-400 w-16 flex-shrink-0">
-                      {acct.account_code}
+                    className="w-full text-left px-4 py-3 hidden lg:grid items-center transition-colors hover:bg-blue-50/40"
+                    style={{
+                      gridTemplateColumns: '280px repeat(12, 72px) 120px 52px',
+                      background: isExpanded ? 'rgba(49,108,127,.05)' : 'white'
+                    }}>
+                    {/* GL code + description combined in first cell */}
+                    <span className="flex items-center gap-2 min-w-0">
+                      <span className="font-mono text-xs font-semibold text-gray-400 whitespace-nowrap flex-shrink-0">
+                        {acct.account_code}
+                      </span>
+                      <span className="font-semibold text-gray-800 text-sm truncate">
+                        {acct.description}
+                      </span>
                     </span>
-                    <span className="font-semibold text-gray-800 flex-shrink-0 w-44 truncate text-sm">
-                      {acct.description}
-                    </span>
-                    <span className="hidden lg:flex flex-1 items-center gap-0">
-                      {Array.from({ length: 12 }, (_, i) => i + 1).map(month => {
-                        const t = itemMonthTotal(lineItems, acct.account_code, month)
-                        return (
-                          <span key={month} className="text-right text-xs w-[72px] flex-shrink-0"
-                            style={{ color: t > 0 ? '#316c7f' : '#d1d5db', fontVariantNumeric: 'tabular-nums' }}>
-                            {t > 0 ? t.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}
-                          </span>
-                        )
-                      })}
-                    </span>
-                    <span className="ml-auto font-bold text-sm w-24 text-right flex-shrink-0"
+                    {/* 12 month cells */}
+                    {Array.from({ length: 12 }, (_, i) => i + 1).map(month => {
+                      const t = itemMonthTotal(lineItems, acct.account_code, month)
+                      return (
+                        <span key={month} className="text-right text-xs"
+                          style={{ color: t > 0 ? '#316c7f' : '#d1d5db', fontVariantNumeric: 'tabular-nums' }}>
+                          {t > 0 ? t.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}
+                        </span>
+                      )
+                    })}
+                    {/* Total cell */}
+                    <span className="text-right font-bold text-sm whitespace-nowrap"
                       style={{ color: rowTotal > 0 ? '#1e4757' : '#9ca3af', fontVariantNumeric: 'tabular-nums' }}>
                       {rowTotal > 0 ? rowTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}
                     </span>
-                    {acctItems.length > 0 && (
-                      <span className="flex-shrink-0 text-xs font-bold px-1.5 py-0.5 rounded-full ml-2"
-                        style={{ background: 'rgba(49,108,127,.12)', color: '#316c7f' }}>
-                        {acctItems.length}
-                      </span>
-                    )}
-                    <svg className="flex-shrink-0 ml-2 transition-transform"
+                    {/* Actions cell: badge + chevron */}
+                    <span className="flex items-center justify-end gap-1.5">
+                      {acctItems.length > 0 && (
+                        <span className="text-xs font-bold px-1.5 py-0.5 rounded-full"
+                          style={{ background: 'rgba(49,108,127,.12)', color: '#316c7f' }}>
+                          {acctItems.length}
+                        </span>
+                      )}
+                      <svg className="flex-shrink-0 transition-transform"
+                        style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}
+                        width="16" height="16" viewBox="0 0 16 16" fill="none">
+                        <path d="M4 6l4 4 4-4" stroke="#9ca3af" strokeWidth="1.5" strokeLinecap="round"/>
+                      </svg>
+                    </span>
+                  </button>
+                  {/* Mobile-only accordion header (flex layout for small screens) */}
+                  <button onClick={() => toggleExpand(acct.account_code)}
+                    className="w-full text-left px-4 py-3 lg:hidden flex items-center gap-2 transition-colors hover:bg-blue-50/40"
+                    style={{ background: isExpanded ? 'rgba(49,108,127,.05)' : 'white' }}>
+                    <span className="font-mono text-xs font-semibold text-gray-400 whitespace-nowrap flex-shrink-0">
+                      {acct.account_code}
+                    </span>
+                    <span className="font-semibold text-gray-800 text-sm truncate flex-1">
+                      {acct.description}
+                    </span>
+                    <span className="font-bold text-sm whitespace-nowrap ml-auto"
+                      style={{ color: rowTotal > 0 ? '#1e4757' : '#9ca3af', fontVariantNumeric: 'tabular-nums' }}>
+                      {rowTotal > 0 ? rowTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}
+                    </span>
+                    <svg className="flex-shrink-0 transition-transform"
                       style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}
                       width="16" height="16" viewBox="0 0 16 16" fill="none">
                       <path d="M4 6l4 4 4-4" stroke="#9ca3af" strokeWidth="1.5" strokeLinecap="round"/>
@@ -2085,7 +2114,7 @@ export default function DashboardPage() {
               Click any GL account to expand. Use <strong>One-time</strong> for a single month, or <strong>Recurring monthly</strong> to spread a fixed amount across multiple months automatically.
               Past months are locked. Items can only be submitted for approval when the window is open.
             </p>
-            </>}
+            </div></div>}
             </>)}
 
             {/* ── New Hires sub-tab ── */}
