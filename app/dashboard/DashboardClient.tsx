@@ -44,6 +44,57 @@ interface PendingItem extends LineItem {
   dept_code: string
 }
 
+interface NewHire {
+  id: string
+  dept_code: string
+  position_title: string
+  anticipated_name: string
+  annual_pay: number
+  start_month: number
+  hire_date: string | null
+  benefits_plan: string | null
+  retirement_pct: number | null
+  phone_allowance: number
+  bonus_amt: number | null
+  bonus_month: number | null
+  commission: number
+  overtime: number
+  hsa: number
+  notes: string | null
+  status: 'draft' | 'submitted' | 'approved' | 'returned'
+  submitted_at: string | null
+  approved_by_jeremiah: boolean
+  jeremiah_approved_at: string | null
+  approved_by_joseph: boolean
+  joseph_approved_at: string | null
+  return_comment: string | null
+}
+
+interface CertRaise {
+  id: string
+  dept_code: string
+  employee_name: string
+  ee_id: string | null
+  certification_name: string
+  expected_month: number
+  hourly_raise: number
+  notes: string | null
+  status: 'draft' | 'submitted' | 'approved' | 'returned'
+  submitted_at: string | null
+  approved_by_jeremiah: boolean
+  jeremiah_approved_at: string | null
+  approved_by_joseph: boolean
+  joseph_approved_at: string | null
+  return_comment: string | null
+}
+
+interface StatusFields {
+  status: 'draft' | 'submitted' | 'approved' | 'returned'
+  approved_by_jeremiah: boolean
+  approved_by_joseph: boolean
+  return_comment: string | null
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -51,6 +102,22 @@ const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Se
 const LINE_SELECT = [
   'id', 'account_code', 'description', 'employee_name', 'vendor', 'notes',
   'month', 'amount', 'status', 'submitted_at',
+  'approved_by_jeremiah', 'jeremiah_approved_at',
+  'approved_by_joseph', 'joseph_approved_at', 'return_comment',
+].join(', ')
+
+const HIRE_SELECT = [
+  'id', 'dept_code', 'position_title', 'anticipated_name', 'annual_pay',
+  'start_month', 'hire_date', 'benefits_plan', 'retirement_pct',
+  'phone_allowance', 'bonus_amt', 'bonus_month', 'commission', 'overtime', 'hsa',
+  'notes', 'status', 'submitted_at',
+  'approved_by_jeremiah', 'jeremiah_approved_at',
+  'approved_by_joseph', 'joseph_approved_at', 'return_comment',
+].join(', ')
+
+const CERT_SELECT = [
+  'id', 'dept_code', 'employee_name', 'ee_id', 'certification_name',
+  'expected_month', 'hourly_raise', 'notes', 'status', 'submitted_at',
   'approved_by_jeremiah', 'jeremiah_approved_at',
   'approved_by_joseph', 'joseph_approved_at', 'return_comment',
 ].join(', ')
@@ -89,9 +156,35 @@ const emptyForm = () => ({
 
 const LS_KEY = (dept: string, code: string) => `mhr-form-${dept}-${code}`
 
+const emptyHireForm = () => ({
+  position_title: '',
+  anticipated_name: 'TBD',
+  annual_pay: '',
+  start_month: 1,
+  hire_date: '',
+  benefits_plan: '',
+  retirement_pct: '',
+  phone_allowance: '',
+  bonus_amt: '',
+  bonus_month: '',
+  commission: '',
+  overtime: '',
+  hsa: '',
+  notes: '',
+})
+
+const emptyCertForm = () => ({
+  employee_name: '',
+  ee_id: '',
+  certification_name: '',
+  expected_month: 1,
+  hourly_raise: '',
+  notes: '',
+})
+
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function StatusBadge({ item }: { item: LineItem }) {
+function StatusBadge({ item }: { item: StatusFields }) {
   if (item.status === 'approved') return (
     <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full"
       style={{ background: '#d1fae5', color: '#065f46' }}>✓ Approved</span>
@@ -152,6 +245,31 @@ export default function DashboardPage() {
   const [expandedRef2025, setExpandedRef2025] = useState<Set<string>>(new Set())
   const [addingTo, setAddingTo] = useState<string | null>(null)
   const [addForm, setAddForm] = useState(emptyForm())
+
+  // Sub-tab state inside 2027 Budget Input
+  const [activeSubTab, setActiveSubTab] = useState<'expenses' | 'hires' | 'certs'>('expenses')
+
+  // New hires
+  const [newHires, setNewHires] = useState<NewHire[]>([])
+  const [pendingHires, setPendingHires] = useState<NewHire[]>([])
+  const [addingHire, setAddingHire] = useState(false)
+  const [hireForm, setHireForm] = useState(emptyHireForm())
+  const [hireSaving, setHireSaving] = useState(false)
+  const [hireSubmittingId, setHireSubmittingId] = useState<string | null>(null)
+  const [hireApprovingId, setHireApprovingId] = useState<string | null>(null)
+  const [hireReturningId, setHireReturningId] = useState<string | null>(null)
+  const [hireReturnComment, setHireReturnComment] = useState<Record<string, string>>({})
+
+  // Cert raises
+  const [certRaises, setCertRaises] = useState<CertRaise[]>([])
+  const [pendingCerts, setPendingCerts] = useState<CertRaise[]>([])
+  const [addingCert, setAddingCert] = useState(false)
+  const [certForm, setCertForm] = useState(emptyCertForm())
+  const [certSaving, setCertSaving] = useState(false)
+  const [certSubmittingId, setCertSubmittingId] = useState<string | null>(null)
+  const [certApprovingId, setCertApprovingId] = useState<string | null>(null)
+  const [certReturningId, setCertReturningId] = useState<string | null>(null)
+  const [certReturnComment, setCertReturnComment] = useState<Record<string, string>>({})
 
   const [loading, setLoading] = useState(true)
   const [actionMsg, setActionMsg] = useState('')
@@ -223,7 +341,7 @@ export default function DashboardPage() {
     setLoading(true)
     setActionMsg('')
 
-    const [res2025, res2026, res2027, wins] = await Promise.all([
+    const [res2025, res2026, res2027, wins, resHires, resCerts] = await Promise.all([
       supabase
         .from('budget_line_items')
         .select(LINE_SELECT)
@@ -243,6 +361,18 @@ export default function DashboardPage() {
         .eq('dept_code', dept)
         .order('account_code').order('created_at'),
       loadWindows(),
+      supabase
+        .from('budget_new_hires')
+        .select(HIRE_SELECT)
+        .eq('scenario_id', SCENARIOS.DIRECTOR_2027)
+        .eq('dept_code', dept)
+        .order('created_at'),
+      supabase
+        .from('budget_cert_raises')
+        .select(CERT_SELECT)
+        .eq('scenario_id', SCENARIOS.DIRECTOR_2027)
+        .eq('dept_code', dept)
+        .order('created_at'),
     ])
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -285,9 +415,57 @@ export default function DashboardPage() {
       description: glDesc[code] ?? code,
     }))
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const castHire = (r: any): NewHire => ({
+      id: r.id as string,
+      dept_code: r.dept_code as string,
+      position_title: r.position_title as string,
+      anticipated_name: r.anticipated_name as string,
+      annual_pay: Number(r.annual_pay),
+      start_month: Number(r.start_month),
+      hire_date: r.hire_date as string | null,
+      benefits_plan: r.benefits_plan as string | null,
+      retirement_pct: r.retirement_pct != null ? Number(r.retirement_pct) : null,
+      phone_allowance: Number(r.phone_allowance ?? 0),
+      bonus_amt: r.bonus_amt != null ? Number(r.bonus_amt) : null,
+      bonus_month: r.bonus_month != null ? Number(r.bonus_month) : null,
+      commission: Number(r.commission ?? 0),
+      overtime: Number(r.overtime ?? 0),
+      hsa: Number(r.hsa ?? 0),
+      notes: r.notes as string | null,
+      status: (r.status as NewHire['status']) ?? 'draft',
+      submitted_at: r.submitted_at as string | null,
+      approved_by_jeremiah: Boolean(r.approved_by_jeremiah),
+      jeremiah_approved_at: r.jeremiah_approved_at as string | null,
+      approved_by_joseph: Boolean(r.approved_by_joseph),
+      joseph_approved_at: r.joseph_approved_at as string | null,
+      return_comment: r.return_comment as string | null,
+    })
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const castCert = (r: any): CertRaise => ({
+      id: r.id as string,
+      dept_code: r.dept_code as string,
+      employee_name: r.employee_name as string,
+      ee_id: r.ee_id as string | null,
+      certification_name: r.certification_name as string,
+      expected_month: Number(r.expected_month),
+      hourly_raise: Number(r.hourly_raise),
+      notes: r.notes as string | null,
+      status: (r.status as CertRaise['status']) ?? 'draft',
+      submitted_at: r.submitted_at as string | null,
+      approved_by_jeremiah: Boolean(r.approved_by_jeremiah),
+      jeremiah_approved_at: r.jeremiah_approved_at as string | null,
+      approved_by_joseph: Boolean(r.approved_by_joseph),
+      joseph_approved_at: r.joseph_approved_at as string | null,
+      return_comment: r.return_comment as string | null,
+    })
+
     setRef2025Items(items2025)
     setRef2026Items(items2026)
     setLineItems(items2027)
+    setNewHires(((resHires.data ?? []) as any[]).map(castHire)) // eslint-disable-line @typescript-eslint/no-explicit-any
+    setCertRaises(((resCerts.data ?? []) as any[]).map(castCert)) // eslint-disable-line @typescript-eslint/no-explicit-any
     setAccounts(accts)
     setGlDescriptions(glDesc)
     setWindowOpen(windowIsOpen(dept, wins))
@@ -295,6 +473,10 @@ export default function DashboardPage() {
     setExpandedRef2025(new Set())
     setExpandedRef2026(new Set())
     setAddingTo(null)
+    setAddingHire(false)
+    setAddingCert(false)
+    setHireForm(emptyHireForm())
+    setCertForm(emptyCertForm())
     setLoading(false)
   }, [supabase, loadWindows])
 
@@ -305,14 +487,28 @@ export default function DashboardPage() {
   // ── Load pending items for admin ───────────────────────────────────────────
 
   const loadPendingItems = useCallback(async () => {
-    const { data } = await supabase
-      .from('budget_line_items')
-      .select(`${LINE_SELECT}, dept_code`)
-      .eq('scenario_id', SCENARIOS.DIRECTOR_2027)
-      .eq('status', 'submitted')
-      .order('submitted_at')
+    const [lineRes, hireRes, certRes] = await Promise.all([
+      supabase
+        .from('budget_line_items')
+        .select(`${LINE_SELECT}, dept_code`)
+        .eq('scenario_id', SCENARIOS.DIRECTOR_2027)
+        .eq('status', 'submitted')
+        .order('submitted_at'),
+      supabase
+        .from('budget_new_hires')
+        .select(HIRE_SELECT)
+        .eq('scenario_id', SCENARIOS.DIRECTOR_2027)
+        .eq('status', 'submitted')
+        .order('submitted_at'),
+      supabase
+        .from('budget_cert_raises')
+        .select(CERT_SELECT)
+        .eq('scenario_id', SCENARIOS.DIRECTOR_2027)
+        .eq('status', 'submitted')
+        .order('submitted_at'),
+    ])
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    setPendingItems(((data ?? []) as any[]).map((r: any) => ({
+    setPendingItems(((lineRes.data ?? []) as any[]).map((r: any) => ({
       id: r.id as string,
       dept_code: r.dept_code as string,
       account_code: r.account_code as string,
@@ -322,6 +518,50 @@ export default function DashboardPage() {
       notes: r.notes as string,
       month: Number(r.month),
       amount: Number(r.amount),
+      status: 'submitted' as const,
+      submitted_at: r.submitted_at as string | null,
+      approved_by_jeremiah: Boolean(r.approved_by_jeremiah),
+      jeremiah_approved_at: r.jeremiah_approved_at as string | null,
+      approved_by_joseph: Boolean(r.approved_by_joseph),
+      joseph_approved_at: r.joseph_approved_at as string | null,
+      return_comment: r.return_comment as string | null,
+    })))
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    setPendingHires(((hireRes.data ?? []) as any[]).map((r: any) => ({
+      id: r.id as string,
+      dept_code: r.dept_code as string,
+      position_title: r.position_title as string,
+      anticipated_name: r.anticipated_name as string,
+      annual_pay: Number(r.annual_pay),
+      start_month: Number(r.start_month),
+      hire_date: r.hire_date as string | null,
+      benefits_plan: r.benefits_plan as string | null,
+      retirement_pct: r.retirement_pct != null ? Number(r.retirement_pct) : null,
+      phone_allowance: Number(r.phone_allowance ?? 0),
+      bonus_amt: r.bonus_amt != null ? Number(r.bonus_amt) : null,
+      bonus_month: r.bonus_month != null ? Number(r.bonus_month) : null,
+      commission: Number(r.commission ?? 0),
+      overtime: Number(r.overtime ?? 0),
+      hsa: Number(r.hsa ?? 0),
+      notes: r.notes as string | null,
+      status: 'submitted' as const,
+      submitted_at: r.submitted_at as string | null,
+      approved_by_jeremiah: Boolean(r.approved_by_jeremiah),
+      jeremiah_approved_at: r.jeremiah_approved_at as string | null,
+      approved_by_joseph: Boolean(r.approved_by_joseph),
+      joseph_approved_at: r.joseph_approved_at as string | null,
+      return_comment: r.return_comment as string | null,
+    })))
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    setPendingCerts(((certRes.data ?? []) as any[]).map((r: any) => ({
+      id: r.id as string,
+      dept_code: r.dept_code as string,
+      employee_name: r.employee_name as string,
+      ee_id: r.ee_id as string | null,
+      certification_name: r.certification_name as string,
+      expected_month: Number(r.expected_month),
+      hourly_raise: Number(r.hourly_raise),
+      notes: r.notes as string | null,
       status: 'submitted' as const,
       submitted_at: r.submitted_at as string | null,
       approved_by_jeremiah: Boolean(r.approved_by_jeremiah),
@@ -522,26 +762,58 @@ export default function DashboardPage() {
 
   async function handleSubmitAll() {
     if (!windowOpen) { setActionMsg('Submission window is currently closed.'); return }
-    const drafts = lineItems.filter(i => i.status === 'draft' || i.status === 'returned')
-    if (drafts.length === 0) { setActionMsg('No draft items to submit.'); return }
-    if (!confirm(`Submit all ${drafts.length} draft item${drafts.length > 1 ? 's' : ''} for approval?`)) return
+    const expDrafts = lineItems.filter(i => i.status === 'draft' || i.status === 'returned')
+    const hireDrafts = newHires.filter(h => h.status === 'draft' || h.status === 'returned')
+    const certDrafts = certRaises.filter(c => c.status === 'draft' || c.status === 'returned')
+    const totalDrafts = expDrafts.length + hireDrafts.length + certDrafts.length
+    if (totalDrafts === 0) { setActionMsg('No draft items to submit.'); return }
+    if (!confirm(`Submit all ${totalDrafts} draft item${totalDrafts > 1 ? 's' : ''} for approval?`)) return
 
     setSavingItem(true)
-    const ids = drafts.map(i => i.id)
-    const { error } = await supabase
-      .from('budget_line_items')
-      .update({ status: 'submitted', submitted_at: new Date().toISOString(), return_comment: null })
-      .in('id', ids)
+    const now = new Date().toISOString()
 
-    if (error) { setActionMsg(`Error: ${error.message}`); setSavingItem(false); return }
-    setLineItems(prev => prev.map(i => ids.includes(i.id) ? { ...i, status: 'submitted', return_comment: null } : i))
-    await logAudit('submit_all', undefined, { count: drafts.length })
-    await sendNotify('submitted_all', {
-      dept: deptNames[activeDept] ?? activeDept,
-      count: drafts.length,
-      submittedBy: userEmail,
+    // Submit expenses
+    if (expDrafts.length > 0) {
+      const ids = expDrafts.map(i => i.id)
+      const { error } = await supabase
+        .from('budget_line_items')
+        .update({ status: 'submitted', submitted_at: now, return_comment: null })
+        .in('id', ids)
+      if (error) { setActionMsg(`Error: ${error.message}`); setSavingItem(false); return }
+      setLineItems(prev => prev.map(i => ids.includes(i.id) ? { ...i, status: 'submitted', return_comment: null } : i))
+    }
+
+    // Submit new hires
+    if (hireDrafts.length > 0) {
+      const ids = hireDrafts.map(h => h.id)
+      const { error } = await supabase
+        .from('budget_new_hires')
+        .update({ status: 'submitted', submitted_at: now, return_comment: null })
+        .in('id', ids)
+      if (error) { setActionMsg(`Error: ${error.message}`); setSavingItem(false); return }
+      setNewHires(prev => prev.map(h => ids.includes(h.id) ? { ...h, status: 'submitted', return_comment: null } : h))
+    }
+
+    // Submit cert raises
+    if (certDrafts.length > 0) {
+      const ids = certDrafts.map(c => c.id)
+      const { error } = await supabase
+        .from('budget_cert_raises')
+        .update({ status: 'submitted', submitted_at: now, return_comment: null })
+        .in('id', ids)
+      if (error) { setActionMsg(`Error: ${error.message}`); setSavingItem(false); return }
+      setCertRaises(prev => prev.map(c => ids.includes(c.id) ? { ...c, status: 'submitted', return_comment: null } : c))
+    }
+
+    await logAudit('submit_all', undefined, { count: totalDrafts })
+    await sendNotify('submitted', {
+      directorName: userEmail,
+      directorEmail: userEmail,
+      deptName: deptNames[activeDept] ?? activeDept,
+      itemCount: totalDrafts,
+      scenarioLabel: '2027 Budget',
     })
-    setActionMsg(`✓ ${drafts.length} item${drafts.length > 1 ? 's' : ''} submitted for approval.`)
+    setActionMsg(`✓ ${totalDrafts} item${totalDrafts > 1 ? 's' : ''} submitted for approval.`)
     setSavingItem(false)
   }
 
@@ -627,6 +899,212 @@ export default function DashboardPage() {
     setReturnComment(c => { const n = { ...c }; delete n[item.id]; return n })
     setReturningId(null)
     setActionMsg('✓ Item returned to director with comment.')
+  }
+
+  // ── New hire CRUD ─────────────────────────────────────────────────────────
+
+  async function handleAddHire() {
+    if (!hireForm.position_title.trim()) { setActionMsg('Position title is required.'); return }
+    const pay = Number(hireForm.annual_pay)
+    if (!pay || pay <= 0) { setActionMsg('Enter a valid annual pay.'); return }
+    setHireSaving(true); setActionMsg('')
+    const { data, error } = await supabase
+      .from('budget_new_hires')
+      .insert({
+        scenario_id: SCENARIOS.DIRECTOR_2027,
+        dept_code: activeDept,
+        position_title: hireForm.position_title.trim(),
+        anticipated_name: hireForm.anticipated_name.trim() || 'TBD',
+        annual_pay: pay,
+        start_month: Number(hireForm.start_month),
+        hire_date: hireForm.hire_date || null,
+        benefits_plan: hireForm.benefits_plan || null,
+        retirement_pct: hireForm.retirement_pct ? Number(hireForm.retirement_pct) : null,
+        phone_allowance: Number(hireForm.phone_allowance || 0),
+        bonus_amt: hireForm.bonus_amt ? Number(hireForm.bonus_amt) : null,
+        bonus_month: hireForm.bonus_month ? Number(hireForm.bonus_month) : null,
+        commission: Number(hireForm.commission || 0),
+        overtime: Number(hireForm.overtime || 0),
+        hsa: Number(hireForm.hsa || 0),
+        notes: hireForm.notes.trim() || null,
+        status: 'draft',
+      })
+      .select(HIRE_SELECT)
+      .single()
+    if (error) { setActionMsg(`Error: ${error.message}`) }
+    else if (data) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const d = data as any
+      const hire: NewHire = {
+        id: d.id, dept_code: d.dept_code, position_title: d.position_title,
+        anticipated_name: d.anticipated_name, annual_pay: Number(d.annual_pay),
+        start_month: Number(d.start_month), hire_date: d.hire_date,
+        benefits_plan: d.benefits_plan, retirement_pct: d.retirement_pct != null ? Number(d.retirement_pct) : null,
+        phone_allowance: Number(d.phone_allowance ?? 0), bonus_amt: d.bonus_amt != null ? Number(d.bonus_amt) : null,
+        bonus_month: d.bonus_month != null ? Number(d.bonus_month) : null,
+        commission: Number(d.commission ?? 0), overtime: Number(d.overtime ?? 0), hsa: Number(d.hsa ?? 0),
+        notes: d.notes, status: 'draft', submitted_at: null,
+        approved_by_jeremiah: false, jeremiah_approved_at: null,
+        approved_by_joseph: false, joseph_approved_at: null, return_comment: null,
+      }
+      setNewHires(prev => [...prev, hire])
+      setHireForm(emptyHireForm())
+      setAddingHire(false)
+      setActionMsg('✓ New hire saved.')
+    }
+    setHireSaving(false)
+  }
+
+  async function handleDeleteHire(hire: NewHire) {
+    if (hire.status !== 'draft') { setActionMsg('Only draft entries can be deleted.'); return }
+    if (!confirm(`Delete planned hire "${hire.position_title}"?`)) return
+    const { error } = await supabase.from('budget_new_hires').delete().eq('id', hire.id)
+    if (error) setActionMsg(`Error: ${error.message}`)
+    else { setNewHires(prev => prev.filter(h => h.id !== hire.id)); setActionMsg('✓ Hire deleted.') }
+  }
+
+  async function handleSubmitHire(hire: NewHire) {
+    if (!windowOpen) { setActionMsg('Submission window is currently closed.'); return }
+    if (hire.status !== 'draft' && hire.status !== 'returned') return
+    setHireSubmittingId(hire.id)
+    const { error } = await supabase
+      .from('budget_new_hires')
+      .update({ status: 'submitted', submitted_at: new Date().toISOString(), return_comment: null })
+      .eq('id', hire.id)
+    if (error) { setActionMsg(`Error: ${error.message}`); setHireSubmittingId(null); return }
+    setNewHires(prev => prev.map(h => h.id === hire.id ? { ...h, status: 'submitted', return_comment: null } : h))
+    setActionMsg('✓ Hire submitted for approval.')
+    setHireSubmittingId(null)
+  }
+
+  async function handleApproveHire(hire: NewHire) {
+    setHireApprovingId(hire.id)
+    const isJeremiah = userEmail === 'jbogdon@myhrpros.com'
+    const isJoseph = userEmail === 'joseph@myhrpros.com'
+    const updates: Record<string, unknown> = {}
+    if (isJeremiah && !hire.approved_by_jeremiah) {
+      updates.approved_by_jeremiah = true; updates.jeremiah_approved_at = new Date().toISOString()
+    } else if (isJoseph && !hire.approved_by_joseph) {
+      updates.approved_by_joseph = true; updates.joseph_approved_at = new Date().toISOString()
+    } else { setActionMsg('Already approved by you.'); setHireApprovingId(null); return }
+    const bothApproved = (isJeremiah ? true : hire.approved_by_jeremiah) && (isJoseph ? true : hire.approved_by_joseph)
+    if (bothApproved) updates.status = 'approved'
+    const { error } = await supabase.from('budget_new_hires').update(updates).eq('id', hire.id)
+    if (error) { setActionMsg(`Error: ${error.message}`); setHireApprovingId(null); return }
+    setPendingHires(prev => bothApproved ? prev.filter(h => h.id !== hire.id) : prev.map(h => h.id === hire.id ? { ...h, ...updates } : h))
+    setActionMsg(bothApproved ? '✓ Hire fully approved.' : '✓ Your approval recorded. Waiting for the other approver.')
+    setHireApprovingId(null)
+  }
+
+  async function handleReturnHire(hire: NewHire) {
+    const comment = hireReturnComment[hire.id]?.trim()
+    if (!comment) { setActionMsg('Add a comment before returning.'); return }
+    setHireReturningId(hire.id)
+    const { error } = await supabase.from('budget_new_hires')
+      .update({ status: 'returned', approved_by_jeremiah: false, jeremiah_approved_at: null, approved_by_joseph: false, joseph_approved_at: null, return_comment: comment })
+      .eq('id', hire.id)
+    if (error) { setActionMsg(`Error: ${error.message}`); setHireReturningId(null); return }
+    setPendingHires(prev => prev.filter(h => h.id !== hire.id))
+    setHireReturnComment(c => { const n = { ...c }; delete n[hire.id]; return n })
+    setHireReturningId(null)
+    setActionMsg('✓ Hire returned to director.')
+  }
+
+  // ── Cert raise CRUD ───────────────────────────────────────────────────────
+
+  async function handleAddCert() {
+    if (!certForm.employee_name.trim()) { setActionMsg('Employee name is required.'); return }
+    if (!certForm.certification_name.trim()) { setActionMsg('Certification name is required.'); return }
+    const raise = Number(certForm.hourly_raise)
+    if (!raise || raise <= 0) { setActionMsg('Enter a valid hourly raise.'); return }
+    setCertSaving(true); setActionMsg('')
+    const { data, error } = await supabase
+      .from('budget_cert_raises')
+      .insert({
+        scenario_id: SCENARIOS.DIRECTOR_2027,
+        dept_code: activeDept,
+        employee_name: certForm.employee_name.trim(),
+        ee_id: certForm.ee_id.trim() || null,
+        certification_name: certForm.certification_name.trim(),
+        expected_month: Number(certForm.expected_month),
+        hourly_raise: raise,
+        notes: certForm.notes.trim() || null,
+        status: 'draft',
+      })
+      .select(CERT_SELECT)
+      .single()
+    if (error) { setActionMsg(`Error: ${error.message}`) }
+    else if (data) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const d = data as any
+      const cert: CertRaise = {
+        id: d.id, dept_code: d.dept_code, employee_name: d.employee_name, ee_id: d.ee_id,
+        certification_name: d.certification_name, expected_month: Number(d.expected_month),
+        hourly_raise: Number(d.hourly_raise), notes: d.notes, status: 'draft', submitted_at: null,
+        approved_by_jeremiah: false, jeremiah_approved_at: null,
+        approved_by_joseph: false, joseph_approved_at: null, return_comment: null,
+      }
+      setCertRaises(prev => [...prev, cert])
+      setCertForm(emptyCertForm())
+      setAddingCert(false)
+      setActionMsg('✓ Cert raise saved.')
+    }
+    setCertSaving(false)
+  }
+
+  async function handleDeleteCert(cert: CertRaise) {
+    if (cert.status !== 'draft') { setActionMsg('Only draft entries can be deleted.'); return }
+    if (!confirm(`Delete cert raise for "${cert.employee_name} — ${cert.certification_name}"?`)) return
+    const { error } = await supabase.from('budget_cert_raises').delete().eq('id', cert.id)
+    if (error) setActionMsg(`Error: ${error.message}`)
+    else { setCertRaises(prev => prev.filter(c => c.id !== cert.id)); setActionMsg('✓ Cert raise deleted.') }
+  }
+
+  async function handleSubmitCert(cert: CertRaise) {
+    if (!windowOpen) { setActionMsg('Submission window is currently closed.'); return }
+    if (cert.status !== 'draft' && cert.status !== 'returned') return
+    setCertSubmittingId(cert.id)
+    const { error } = await supabase
+      .from('budget_cert_raises')
+      .update({ status: 'submitted', submitted_at: new Date().toISOString(), return_comment: null })
+      .eq('id', cert.id)
+    if (error) { setActionMsg(`Error: ${error.message}`); setCertSubmittingId(null); return }
+    setCertRaises(prev => prev.map(c => c.id === cert.id ? { ...c, status: 'submitted', return_comment: null } : c))
+    setActionMsg('✓ Cert raise submitted for approval.')
+    setCertSubmittingId(null)
+  }
+
+  async function handleApproveCert(cert: CertRaise) {
+    setCertApprovingId(cert.id)
+    const isJeremiah = userEmail === 'jbogdon@myhrpros.com'
+    const isJoseph = userEmail === 'joseph@myhrpros.com'
+    const updates: Record<string, unknown> = {}
+    if (isJeremiah && !cert.approved_by_jeremiah) {
+      updates.approved_by_jeremiah = true; updates.jeremiah_approved_at = new Date().toISOString()
+    } else if (isJoseph && !cert.approved_by_joseph) {
+      updates.approved_by_joseph = true; updates.joseph_approved_at = new Date().toISOString()
+    } else { setActionMsg('Already approved by you.'); setCertApprovingId(null); return }
+    const bothApproved = (isJeremiah ? true : cert.approved_by_jeremiah) && (isJoseph ? true : cert.approved_by_joseph)
+    if (bothApproved) updates.status = 'approved'
+    const { error } = await supabase.from('budget_cert_raises').update(updates).eq('id', cert.id)
+    if (error) { setActionMsg(`Error: ${error.message}`); setCertApprovingId(null); return }
+    setPendingCerts(prev => bothApproved ? prev.filter(c => c.id !== cert.id) : prev.map(c => c.id === cert.id ? { ...c, ...updates } : c))
+    setActionMsg(bothApproved ? '✓ Cert raise fully approved.' : '✓ Your approval recorded. Waiting for the other approver.')
+    setCertApprovingId(null)
+  }
+
+  async function handleReturnCert(cert: CertRaise) {
+    const comment = certReturnComment[cert.id]?.trim()
+    if (!comment) { setActionMsg('Add a comment before returning.'); return }
+    setCertReturningId(cert.id)
+    const { error } = await supabase.from('budget_cert_raises')
+      .update({ status: 'returned', approved_by_jeremiah: false, jeremiah_approved_at: null, approved_by_joseph: false, joseph_approved_at: null, return_comment: comment })
+      .eq('id', cert.id)
+    if (error) { setActionMsg(`Error: ${error.message}`); setCertReturningId(null); return }
+    setPendingCerts(prev => prev.filter(c => c.id !== cert.id))
+    setCertReturnComment(c => { const n = { ...c }; delete n[cert.id]; return n })
+    setCertReturningId(null)
+    setActionMsg('✓ Cert raise returned to director.')
   }
 
   // ── Admin: toggle submission window ──────────────────────────────────────
@@ -840,7 +1318,7 @@ export default function DashboardPage() {
         <div>
           <div className="flex items-center gap-2 mb-3">
             <h3 className="font-extrabold text-sm uppercase tracking-widest" style={{ color: '#1e4757' }}>
-              Pending Approvals
+              Pending Expense Approvals
             </h3>
             {pendingItems.length > 0 && (
               <span className="text-xs font-bold px-2 py-0.5 rounded-full"
@@ -850,7 +1328,7 @@ export default function DashboardPage() {
 
           {pendingItems.length === 0 ? (
             <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-400 text-sm">
-              No items pending approval.
+              No expense items pending approval.
             </div>
           ) : (
             <div className="space-y-3">
@@ -935,6 +1413,186 @@ export default function DashboardPage() {
             </div>
           )}
         </div>
+
+        {/* ── Pending new hire approvals ── */}
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <h3 className="font-extrabold text-sm uppercase tracking-widest" style={{ color: '#1e4757' }}>
+              Pending New Hire Approvals
+            </h3>
+            {pendingHires.length > 0 && (
+              <span className="text-xs font-bold px-2 py-0.5 rounded-full"
+                style={{ background: '#ff930c', color: '#fff' }}>{pendingHires.length}</span>
+            )}
+          </div>
+          {pendingHires.length === 0 ? (
+            <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-400 text-sm">
+              No new hire plans pending approval.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {pendingHires.map(hire => {
+                const isJeremiah = userEmail === 'jbogdon@myhrpros.com'
+                const isJoseph = userEmail === 'joseph@myhrpros.com'
+                const myApproved = isJeremiah ? hire.approved_by_jeremiah : hire.approved_by_joseph
+                const busy = hireApprovingId === hire.id || hireReturningId === hire.id
+                return (
+                  <div key={hire.id} className="bg-white rounded-lg border shadow-sm overflow-hidden"
+                    style={{ borderColor: '#e5e7eb' }}>
+                    <div className="px-4 py-3 flex flex-wrap items-start gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-semibold text-gray-800">{hire.position_title}</span>
+                          <span className="text-xs text-gray-400">({hire.anticipated_name})</span>
+                          <span className="text-xs px-2 py-0.5 rounded font-semibold"
+                            style={{ background: 'rgba(49,108,127,.1)', color: '#316c7f' }}>
+                            {deptNames[hire.dept_code] ?? hire.dept_code}
+                          </span>
+                        </div>
+                        <div className="mt-1 flex items-center gap-4 text-xs text-gray-500">
+                          <span>Start: {MONTH_NAMES[hire.start_month - 1]} 2027</span>
+                          <span className="font-semibold" style={{ color: '#316c7f', fontVariantNumeric: 'tabular-nums' }}>
+                            ${hire.annual_pay.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / yr
+                          </span>
+                          {hire.benefits_plan && <span>🏥 {hire.benefits_plan}</span>}
+                        </div>
+                        <div className="mt-1.5 flex items-center gap-3 text-xs">
+                          <span style={{ color: hire.approved_by_jeremiah ? '#059669' : '#d1d5db' }}>
+                            {hire.approved_by_jeremiah ? '✓' : '⏳'} Jeremiah
+                          </span>
+                          <span style={{ color: hire.approved_by_joseph ? '#059669' : '#d1d5db' }}>
+                            {hire.approved_by_joseph ? '✓' : '⏳'} Joseph
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-2 items-end">
+                        {!myApproved && (
+                          <button onClick={() => handleApproveHire(hire)} disabled={busy}
+                            className="btn-primary text-xs px-3 py-1.5 whitespace-nowrap">
+                            {busy ? '…' : '✓ Approve'}
+                          </button>
+                        )}
+                        {myApproved && <span className="text-xs font-semibold" style={{ color: '#059669' }}>✓ You approved</span>}
+                        <button
+                          onClick={() => setHireReturningId(hireReturningId === hire.id ? null : hire.id)}
+                          disabled={busy}
+                          className="text-xs font-semibold px-3 py-1.5 rounded transition-colors whitespace-nowrap"
+                          style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa' }}>
+                          ↩ Return
+                        </button>
+                      </div>
+                    </div>
+                    {hireReturningId === hire.id && (
+                      <div className="px-4 py-3 flex gap-2 items-center" style={{ borderTop: '1px solid #fee2e2', background: '#fff7f7' }}>
+                        <input type="text" placeholder="Reason for returning…"
+                          value={hireReturnComment[hire.id] ?? ''}
+                          onChange={e => setHireReturnComment(c => ({ ...c, [hire.id]: e.target.value }))}
+                          className="input-field flex-1 text-sm" />
+                        <button onClick={() => handleReturnHire(hire)}
+                          disabled={!hireReturnComment[hire.id]?.trim()}
+                          className="text-xs font-bold px-3 py-1.5 rounded whitespace-nowrap"
+                          style={{ background: '#dc2626', color: '#fff', opacity: !hireReturnComment[hire.id]?.trim() ? 0.5 : 1 }}>
+                          Send Return
+                        </button>
+                        <button onClick={() => setHireReturningId(null)} className="text-xs text-gray-400 px-2 py-1.5">Cancel</button>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* ── Pending cert raise approvals ── */}
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <h3 className="font-extrabold text-sm uppercase tracking-widest" style={{ color: '#1e4757' }}>
+              Pending Cert Raise Approvals
+            </h3>
+            {pendingCerts.length > 0 && (
+              <span className="text-xs font-bold px-2 py-0.5 rounded-full"
+                style={{ background: '#ff930c', color: '#fff' }}>{pendingCerts.length}</span>
+            )}
+          </div>
+          {pendingCerts.length === 0 ? (
+            <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-400 text-sm">
+              No cert raise requests pending approval.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {pendingCerts.map(cert => {
+                const isJeremiah = userEmail === 'jbogdon@myhrpros.com'
+                const isJoseph = userEmail === 'joseph@myhrpros.com'
+                const myApproved = isJeremiah ? cert.approved_by_jeremiah : cert.approved_by_joseph
+                const busy = certApprovingId === cert.id || certReturningId === cert.id
+                return (
+                  <div key={cert.id} className="bg-white rounded-lg border shadow-sm overflow-hidden"
+                    style={{ borderColor: '#e5e7eb' }}>
+                    <div className="px-4 py-3 flex flex-wrap items-start gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-semibold text-gray-800">{cert.employee_name}</span>
+                          {cert.ee_id && <span className="font-mono text-xs text-gray-400">{cert.ee_id}</span>}
+                          <span className="text-xs px-2 py-0.5 rounded font-semibold"
+                            style={{ background: 'rgba(49,108,127,.1)', color: '#316c7f' }}>
+                            {deptNames[cert.dept_code] ?? cert.dept_code}
+                          </span>
+                        </div>
+                        <div className="mt-1 flex items-center gap-4 text-xs text-gray-500">
+                          <span>🎓 {cert.certification_name}</span>
+                          <span>Expected: {MONTH_NAMES[cert.expected_month - 1]} 2027</span>
+                          <span className="font-semibold" style={{ color: '#316c7f', fontVariantNumeric: 'tabular-nums' }}>
+                            +${cert.hourly_raise.toFixed(4)}/hr
+                          </span>
+                        </div>
+                        <div className="mt-1.5 flex items-center gap-3 text-xs">
+                          <span style={{ color: cert.approved_by_jeremiah ? '#059669' : '#d1d5db' }}>
+                            {cert.approved_by_jeremiah ? '✓' : '⏳'} Jeremiah
+                          </span>
+                          <span style={{ color: cert.approved_by_joseph ? '#059669' : '#d1d5db' }}>
+                            {cert.approved_by_joseph ? '✓' : '⏳'} Joseph
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-2 items-end">
+                        {!myApproved && (
+                          <button onClick={() => handleApproveCert(cert)} disabled={busy}
+                            className="btn-primary text-xs px-3 py-1.5 whitespace-nowrap">
+                            {busy ? '…' : '✓ Approve'}
+                          </button>
+                        )}
+                        {myApproved && <span className="text-xs font-semibold" style={{ color: '#059669' }}>✓ You approved</span>}
+                        <button
+                          onClick={() => setCertReturningId(certReturningId === cert.id ? null : cert.id)}
+                          disabled={busy}
+                          className="text-xs font-semibold px-3 py-1.5 rounded transition-colors whitespace-nowrap"
+                          style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa' }}>
+                          ↩ Return
+                        </button>
+                      </div>
+                    </div>
+                    {certReturningId === cert.id && (
+                      <div className="px-4 py-3 flex gap-2 items-center" style={{ borderTop: '1px solid #fee2e2', background: '#fff7f7' }}>
+                        <input type="text" placeholder="Reason for returning…"
+                          value={certReturnComment[cert.id] ?? ''}
+                          onChange={e => setCertReturnComment(c => ({ ...c, [cert.id]: e.target.value }))}
+                          className="input-field flex-1 text-sm" />
+                        <button onClick={() => handleReturnCert(cert)}
+                          disabled={!certReturnComment[cert.id]?.trim()}
+                          className="text-xs font-bold px-3 py-1.5 rounded whitespace-nowrap"
+                          style={{ background: '#dc2626', color: '#fff', opacity: !certReturnComment[cert.id]?.trim() ? 0.5 : 1 }}>
+                          Send Return
+                        </button>
+                        <button onClick={() => setCertReturningId(null)} className="text-xs text-gray-400 px-2 py-1.5">Cancel</button>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
       </div>
     )
   }
@@ -951,7 +1609,11 @@ export default function DashboardPage() {
 
   const deptLabel = deptNames[activeDept] ?? activeDept
   const isAdmin = profile.role === 'admin'
-  const draftCount = lineItems.filter(i => i.status === 'draft' || i.status === 'returned').length
+  const expDraftCount = lineItems.filter(i => i.status === 'draft' || i.status === 'returned').length
+  const hireDraftCount = newHires.filter(h => h.status === 'draft' || h.status === 'returned').length
+  const certDraftCount = certRaises.filter(c => c.status === 'draft' || c.status === 'returned').length
+  const draftCount = expDraftCount + hireDraftCount + certDraftCount
+  const totalPendingAdmin = pendingItems.length + pendingHires.length + pendingCerts.length
 
   const tabs = [
     { key: 'input'   as const, label: '2027 Budget Input' },
@@ -1052,9 +1714,9 @@ export default function DashboardPage() {
                 cursor: 'pointer',
               }}>
               {tab.label}
-              {tab.key === 'admin' && pendingItems.length > 0 && (
+              {tab.key === 'admin' && totalPendingAdmin > 0 && (
                 <span className="absolute -top-1 -right-1 text-xs font-bold w-4 h-4 rounded-full flex items-center justify-center"
-                  style={{ background: '#ff930c', color: '#fff', fontSize: 9 }}>{pendingItems.length}</span>
+                  style={{ background: '#ff930c', color: '#fff', fontSize: 9 }}>{totalPendingAdmin}</span>
               )}
             </button>
           ))}
@@ -1072,12 +1734,7 @@ export default function DashboardPage() {
 
         : activeTab === 'ref2025' ? renderRefAccordion(ref2025Items, expandedRef2025, toggleRef2025, '2025')
 
-        : accounts.length === 0 ? (
-          <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-400 text-sm">
-            No budget lines found for this department.
-          </div>
-
-        ) : (
+        : (
           /* ── Input Tab ──────────────────────────────────────────────────── */
           <div className="space-y-3">
 
@@ -1103,6 +1760,39 @@ export default function DashboardPage() {
               </div>
             )}
 
+            {/* Sub-tabs */}
+            <div className="flex gap-1" style={{ borderBottom: '1px solid #e5e7eb' }}>
+              {([
+                { key: 'expenses' as const, label: 'Expenses', count: expDraftCount },
+                { key: 'hires'    as const, label: 'New Hires', count: hireDraftCount },
+                { key: 'certs'    as const, label: 'Certifications', count: certDraftCount },
+              ]).map(st => (
+                <button key={st.key} onClick={() => setActiveSubTab(st.key)}
+                  className="relative px-4 py-2 text-sm font-semibold transition-colors"
+                  style={{
+                    marginBottom: '-1px',
+                    color: activeSubTab === st.key ? '#316c7f' : '#9ca3af',
+                    background: 'transparent', border: 'none',
+                    borderBottom: `2px solid ${activeSubTab === st.key ? '#316c7f' : 'transparent'}`,
+                    cursor: 'pointer',
+                  }}>
+                  {st.label}
+                  {st.count > 0 && (
+                    <span className="ml-1.5 text-xs font-bold px-1.5 py-0.5 rounded-full"
+                      style={{ background: 'rgba(49,108,127,.12)', color: '#316c7f' }}>{st.count}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+
+            {/* Expenses sub-tab */}
+            {activeSubTab === 'expenses' && (<>
+            {accounts.length === 0 && (
+              <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-400 text-sm">
+                No budget expense lines found for this department. Switch to New Hires or Certifications to add other budget items.
+              </div>
+            )}
+            {accounts.length > 0 && <>
             {/* Column headers */}
             <div className="hidden lg:grid text-xs font-bold uppercase tracking-widest text-gray-400 px-4"
               style={{ gridTemplateColumns: '220px 1fr repeat(12, 72px) 100px 36px' }}>
@@ -1395,6 +2085,338 @@ export default function DashboardPage() {
               Click any GL account to expand. Use <strong>One-time</strong> for a single month, or <strong>Recurring monthly</strong> to spread a fixed amount across multiple months automatically.
               Past months are locked. Items can only be submitted for approval when the window is open.
             </p>
+            </>}
+            </>)}
+
+            {/* ── New Hires sub-tab ── */}
+            {activeSubTab === 'hires' && (
+              <div className="space-y-3">
+                {/* Hire list */}
+                {newHires.length > 0 && (
+                  <div className="bg-white rounded-lg border shadow-sm overflow-hidden" style={{ borderColor: '#e5e7eb' }}>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full text-sm">
+                        <thead>
+                          <tr style={{ background: '#f8fafb' }}>
+                            {['Position', 'Anticipated Name', 'Annual Pay', 'Start', 'Benefits', 'Retirement', 'Phone', 'Bonus', 'Status', ''].map(h => (
+                              <th key={h} className="text-left px-3 py-2 text-xs font-bold uppercase tracking-wider"
+                                style={{ color: '#316c7f', whiteSpace: 'nowrap' }}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {newHires.map((hire, idx) => {
+                            const canDelete = hire.status === 'draft'
+                            const canSubmit = windowOpen && (hire.status === 'draft' || hire.status === 'returned')
+                            return (
+                              <tr key={hire.id} className="border-t border-gray-100"
+                                style={{ background: hire.status === 'returned' ? '#fff7f7' : idx % 2 === 0 ? '#fff' : 'rgba(0,0,0,.015)' }}>
+                                <td className="px-3 py-2 font-medium text-gray-800 whitespace-nowrap">
+                                  {hire.position_title}
+                                  {hire.status === 'returned' && hire.return_comment && (
+                                    <div className="text-xs text-red-400 font-normal truncate" title={hire.return_comment}>↩ {hire.return_comment}</div>
+                                  )}
+                                </td>
+                                <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{hire.anticipated_name}</td>
+                                <td className="px-3 py-2 text-right font-semibold whitespace-nowrap"
+                                  style={{ color: '#316c7f', fontVariantNumeric: 'tabular-nums' }}>
+                                  ${hire.annual_pay.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </td>
+                                <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{MONTH_NAMES[hire.start_month - 1]}</td>
+                                <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{hire.benefits_plan || <span className="text-gray-300">—</span>}</td>
+                                <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                                  {hire.retirement_pct != null ? `${(hire.retirement_pct * 100).toFixed(1)}%` : <span className="text-gray-300">—</span>}
+                                </td>
+                                <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                                  {hire.phone_allowance > 0 ? `$${hire.phone_allowance.toFixed(0)}/mo` : <span className="text-gray-300">—</span>}
+                                </td>
+                                <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                                  {hire.bonus_amt ? `$${hire.bonus_amt.toLocaleString()} in ${MONTH_NAMES[(hire.bonus_month ?? 1) - 1]}` : <span className="text-gray-300">—</span>}
+                                </td>
+                                <td className="px-3 py-2 whitespace-nowrap"><StatusBadge item={hire} /></td>
+                                <td className="px-3 py-2 whitespace-nowrap">
+                                  <div className="flex items-center gap-1.5">
+                                    {canSubmit && (
+                                      <button onClick={() => handleSubmitHire(hire)}
+                                        disabled={hireSubmittingId === hire.id}
+                                        className="text-xs font-bold px-2 py-0.5 rounded transition-colors whitespace-nowrap"
+                                        style={{ background: 'rgba(49,108,127,.1)', color: '#316c7f' }}>
+                                        {hireSubmittingId === hire.id ? '…' : '↑ Submit'}
+                                      </button>
+                                    )}
+                                    {canDelete && (
+                                      <button onClick={() => handleDeleteHire(hire)}
+                                        className="text-gray-300 hover:text-red-500 transition-colors" title="Delete">
+                                        <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+                                          <path d="M2 4h11M5 4V2.5h5V4M6 7v4M9 7v4M3 4l.7 8.5A1 1 0 004.7 13.5h5.6a1 1 0 001-.9L12 4"
+                                            stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+                                        </svg>
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Add hire form */}
+                <div className="bg-white rounded-lg border shadow-sm p-4" style={{ borderColor: '#e5e7eb' }}>
+                  {addingHire ? (
+                    <div className="space-y-3">
+                      <p className="text-xs font-bold uppercase tracking-widest" style={{ color: '#316c7f' }}>New Hire Details</p>
+                      <div className="flex flex-wrap gap-2 items-end">
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs font-semibold text-gray-500">Position Title <span style={{ color: '#ff930c' }}>*</span></label>
+                          <input type="text" placeholder="e.g. HR Coordinator" value={hireForm.position_title}
+                            onChange={e => setHireForm(f => ({ ...f, position_title: e.target.value }))}
+                            className="input-field" style={{ width: 200 }} autoFocus />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs font-semibold text-gray-500">Anticipated Name</label>
+                          <input type="text" placeholder="TBD" value={hireForm.anticipated_name}
+                            onChange={e => setHireForm(f => ({ ...f, anticipated_name: e.target.value }))}
+                            className="input-field" style={{ width: 150 }} />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs font-semibold text-gray-500">Annual Pay <span style={{ color: '#ff930c' }}>*</span></label>
+                          <input type="number" step="0.01" min="0" placeholder="55000" value={hireForm.annual_pay}
+                            onChange={e => setHireForm(f => ({ ...f, annual_pay: e.target.value }))}
+                            className="input-field" style={{ width: 120 }} />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs font-semibold text-gray-500">Start Month <span style={{ color: '#ff930c' }}>*</span></label>
+                          <select value={hireForm.start_month}
+                            onChange={e => setHireForm(f => ({ ...f, start_month: Number(e.target.value) }))}
+                            className="input-field" style={{ width: 110 }}>
+                            {MONTH_NAMES.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+                          </select>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs font-semibold text-gray-500">Hire Date</label>
+                          <input type="date" value={hireForm.hire_date}
+                            onChange={e => setHireForm(f => ({ ...f, hire_date: e.target.value }))}
+                            className="input-field" style={{ width: 140 }} />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs font-semibold text-gray-500">Benefits Plan</label>
+                          <select value={hireForm.benefits_plan}
+                            onChange={e => setHireForm(f => ({ ...f, benefits_plan: e.target.value }))}
+                            className="input-field" style={{ width: 150 }}>
+                            <option value="">None</option>
+                            <option value="MedSPMI">MedSPMI</option>
+                            <option value="MedSPMIBuyUp">MedSPMI Buy Up</option>
+                          </select>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs font-semibold text-gray-500">Retirement %</label>
+                          <input type="number" step="0.01" min="0" max="100" placeholder="4.00" value={hireForm.retirement_pct}
+                            onChange={e => setHireForm(f => ({ ...f, retirement_pct: e.target.value }))}
+                            className="input-field" style={{ width: 90 }} />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs font-semibold text-gray-500">Phone/mo</label>
+                          <input type="number" step="0.01" min="0" placeholder="0" value={hireForm.phone_allowance}
+                            onChange={e => setHireForm(f => ({ ...f, phone_allowance: e.target.value }))}
+                            className="input-field" style={{ width: 90 }} />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs font-semibold text-gray-500">Bonus $</label>
+                          <input type="number" step="0.01" min="0" placeholder="0" value={hireForm.bonus_amt}
+                            onChange={e => setHireForm(f => ({ ...f, bonus_amt: e.target.value }))}
+                            className="input-field" style={{ width: 100 }} />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs font-semibold text-gray-500">Bonus Month</label>
+                          <select value={hireForm.bonus_month}
+                            onChange={e => setHireForm(f => ({ ...f, bonus_month: e.target.value }))}
+                            className="input-field" style={{ width: 100 }}>
+                            <option value="">—</option>
+                            {MONTH_NAMES.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+                          </select>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs font-semibold text-gray-500">Notes</label>
+                          <input type="text" placeholder="Optional" value={hireForm.notes}
+                            onChange={e => setHireForm(f => ({ ...f, notes: e.target.value }))}
+                            className="input-field" style={{ width: 180 }} />
+                        </div>
+                        <div className="flex gap-2 items-end pb-0.5">
+                          <button onClick={handleAddHire} disabled={hireSaving}
+                            className="btn-primary text-sm px-4 py-2">
+                            {hireSaving ? 'Saving…' : 'Save'}
+                          </button>
+                          <button onClick={() => { setAddingHire(false); setHireForm(emptyHireForm()); setActionMsg('') }}
+                            className="text-sm px-4 py-2 rounded font-semibold"
+                            style={{ background: '#f3f4f6', color: '#6b7280' }}>Cancel</button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <button onClick={() => setAddingHire(true)}
+                      className="text-sm font-semibold flex items-center gap-1.5 transition-colors"
+                      style={{ color: '#316c7f' }}>
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                        <circle cx="7" cy="7" r="6" stroke="currentColor" strokeWidth="1.3"/>
+                        <path d="M7 4v6M4 7h6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+                      </svg>
+                      Add Planned Hire
+                    </button>
+                  )}
+                </div>
+
+                {newHires.length === 0 && !addingHire && (
+                  <p className="text-xs text-gray-400 text-center py-4">No planned hires entered yet for this department.</p>
+                )}
+              </div>
+            )}
+
+            {/* ── Certifications sub-tab ── */}
+            {activeSubTab === 'certs' && (
+              <div className="space-y-3">
+                {/* Cert list */}
+                {certRaises.length > 0 && (
+                  <div className="bg-white rounded-lg border shadow-sm overflow-hidden" style={{ borderColor: '#e5e7eb' }}>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full text-sm">
+                        <thead>
+                          <tr style={{ background: '#f8fafb' }}>
+                            {['Employee', 'EE ID', 'Certification', 'Expected Month', 'Hourly Raise', 'Notes', 'Status', ''].map(h => (
+                              <th key={h} className="text-left px-3 py-2 text-xs font-bold uppercase tracking-wider"
+                                style={{ color: '#316c7f', whiteSpace: 'nowrap' }}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {certRaises.map((cert, idx) => {
+                            const canDelete = cert.status === 'draft'
+                            const canSubmit = windowOpen && (cert.status === 'draft' || cert.status === 'returned')
+                            return (
+                              <tr key={cert.id} className="border-t border-gray-100"
+                                style={{ background: cert.status === 'returned' ? '#fff7f7' : idx % 2 === 0 ? '#fff' : 'rgba(0,0,0,.015)' }}>
+                                <td className="px-3 py-2 font-medium text-gray-800 whitespace-nowrap">
+                                  {cert.employee_name}
+                                  {cert.status === 'returned' && cert.return_comment && (
+                                    <div className="text-xs text-red-400 font-normal truncate" title={cert.return_comment}>↩ {cert.return_comment}</div>
+                                  )}
+                                </td>
+                                <td className="px-3 py-2 font-mono text-xs text-gray-500 whitespace-nowrap">{cert.ee_id || <span className="text-gray-300">—</span>}</td>
+                                <td className="px-3 py-2 text-gray-700 whitespace-nowrap">🎓 {cert.certification_name}</td>
+                                <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{MONTH_NAMES[cert.expected_month - 1]}</td>
+                                <td className="px-3 py-2 text-right font-semibold whitespace-nowrap"
+                                  style={{ color: '#316c7f', fontVariantNumeric: 'tabular-nums' }}>
+                                  +${cert.hourly_raise.toFixed(4)}/hr
+                                </td>
+                                <td className="px-3 py-2 text-gray-500 max-w-[140px] truncate" title={cert.notes ?? ''}>{cert.notes || <span className="text-gray-300">—</span>}</td>
+                                <td className="px-3 py-2 whitespace-nowrap"><StatusBadge item={cert} /></td>
+                                <td className="px-3 py-2 whitespace-nowrap">
+                                  <div className="flex items-center gap-1.5">
+                                    {canSubmit && (
+                                      <button onClick={() => handleSubmitCert(cert)}
+                                        disabled={certSubmittingId === cert.id}
+                                        className="text-xs font-bold px-2 py-0.5 rounded transition-colors whitespace-nowrap"
+                                        style={{ background: 'rgba(49,108,127,.1)', color: '#316c7f' }}>
+                                        {certSubmittingId === cert.id ? '…' : '↑ Submit'}
+                                      </button>
+                                    )}
+                                    {canDelete && (
+                                      <button onClick={() => handleDeleteCert(cert)}
+                                        className="text-gray-300 hover:text-red-500 transition-colors" title="Delete">
+                                        <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+                                          <path d="M2 4h11M5 4V2.5h5V4M6 7v4M9 7v4M3 4l.7 8.5A1 1 0 004.7 13.5h5.6a1 1 0 001-.9L12 4"
+                                            stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+                                        </svg>
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Add cert form */}
+                <div className="bg-white rounded-lg border shadow-sm p-4" style={{ borderColor: '#e5e7eb' }}>
+                  {addingCert ? (
+                    <div className="space-y-3">
+                      <p className="text-xs font-bold uppercase tracking-widest" style={{ color: '#316c7f' }}>Certification Raise Details</p>
+                      <div className="flex flex-wrap gap-2 items-end">
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs font-semibold text-gray-500">Employee Name <span style={{ color: '#ff930c' }}>*</span></label>
+                          <input type="text" placeholder="e.g. Jane Smith" value={certForm.employee_name}
+                            onChange={e => setCertForm(f => ({ ...f, employee_name: e.target.value }))}
+                            className="input-field" style={{ width: 180 }} autoFocus />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs font-semibold text-gray-500">EE ID</label>
+                          <input type="text" placeholder="Optional" value={certForm.ee_id}
+                            onChange={e => setCertForm(f => ({ ...f, ee_id: e.target.value }))}
+                            className="input-field" style={{ width: 110 }} />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs font-semibold text-gray-500">Certification Name <span style={{ color: '#ff930c' }}>*</span></label>
+                          <input type="text" placeholder="e.g. PHR, SHRM-CP" value={certForm.certification_name}
+                            onChange={e => setCertForm(f => ({ ...f, certification_name: e.target.value }))}
+                            className="input-field" style={{ width: 200 }} />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs font-semibold text-gray-500">Expected Month <span style={{ color: '#ff930c' }}>*</span></label>
+                          <select value={certForm.expected_month}
+                            onChange={e => setCertForm(f => ({ ...f, expected_month: Number(e.target.value) }))}
+                            className="input-field" style={{ width: 110 }}>
+                            {MONTH_NAMES.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+                          </select>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs font-semibold text-gray-500">Hourly Raise ($) <span style={{ color: '#ff930c' }}>*</span></label>
+                          <input type="number" step="0.0001" min="0" placeholder="1.0000" value={certForm.hourly_raise}
+                            onChange={e => setCertForm(f => ({ ...f, hourly_raise: e.target.value }))}
+                            className="input-field" style={{ width: 120 }} />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs font-semibold text-gray-500">Notes</label>
+                          <input type="text" placeholder="Optional" value={certForm.notes}
+                            onChange={e => setCertForm(f => ({ ...f, notes: e.target.value }))}
+                            className="input-field" style={{ width: 180 }} />
+                        </div>
+                        <div className="flex gap-2 items-end pb-0.5">
+                          <button onClick={handleAddCert} disabled={certSaving}
+                            className="btn-primary text-sm px-4 py-2">
+                            {certSaving ? 'Saving…' : 'Save'}
+                          </button>
+                          <button onClick={() => { setAddingCert(false); setCertForm(emptyCertForm()); setActionMsg('') }}
+                            className="text-sm px-4 py-2 rounded font-semibold"
+                            style={{ background: '#f3f4f6', color: '#6b7280' }}>Cancel</button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <button onClick={() => setAddingCert(true)}
+                      className="text-sm font-semibold flex items-center gap-1.5 transition-colors"
+                      style={{ color: '#316c7f' }}>
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                        <circle cx="7" cy="7" r="6" stroke="currentColor" strokeWidth="1.3"/>
+                        <path d="M7 4v6M4 7h6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+                      </svg>
+                      Add Certification Raise
+                    </button>
+                  )}
+                </div>
+
+                {certRaises.length === 0 && !addingCert && (
+                  <p className="text-xs text-gray-400 text-center py-4">No certification raises entered yet for this department.</p>
+                )}
+              </div>
+            )}
+
           </div>
         )}
       </main>
