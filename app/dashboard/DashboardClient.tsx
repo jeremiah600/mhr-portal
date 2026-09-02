@@ -435,7 +435,8 @@ export default function DashboardPage() {
 
       if (error) { setActionMsg(`Error: ${error.message}`) }
       else if (data) {
-        const cast = data.map((r: Record<string, unknown>) => ({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const cast = (data as any[]).map((r: Record<string, unknown>) => ({
           ...(r as LineItem), amount: Number(r.amount), status: 'draft' as const,
           approved_by_jeremiah: false, approved_by_joseph: false,
           submitted_at: null, jeremiah_approved_at: null, joseph_approved_at: null, return_comment: null,
@@ -454,8 +455,10 @@ export default function DashboardPage() {
 
       if (error) { setActionMsg(`Error: ${error.message}`) }
       else if (data) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const d = data as any
         const item = {
-          ...(data as LineItem), amount: Number((data as Record<string, unknown>).amount), status: 'draft' as const,
+          ...d as LineItem, amount: Number(d.amount), status: 'draft' as const,
           approved_by_jeremiah: false, approved_by_joseph: false,
           submitted_at: null, jeremiah_approved_at: null, joseph_approved_at: null, return_comment: null,
         }
@@ -499,7 +502,8 @@ export default function DashboardPage() {
       .single()
 
     if (error) { setActionMsg(`Error: ${error.message}`); setSubmittingId(null); return }
-    setLineItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'submitted', submitted_at: (data as Record<string, unknown>).submitted_at as string, return_comment: null } : i))
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    setLineItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'submitted', submitted_at: (data as any).submitted_at as string, return_comment: null } : i))
     await logAudit('submit', item.id)
     await sendNotify('submitted', {
       dept: deptNames[activeDept] ?? activeDept,
