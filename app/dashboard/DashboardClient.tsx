@@ -780,32 +780,55 @@ export default function DashboardPage() {
 
     if (addForm.entryType === 'recurring') {
       const from = Number(addForm.fromMonth)
-      const to = Number(addForm.toMonth)
-      if (from > to) { setActionMsg('Start month must be ≤ end month.'); setSavingItem(false); return }
+      const toMonth = Number(addForm.toMonth)
+      const toYear = addForm.toYear ?? 2027
 
-      const payloads = []
-      for (let m = from; m <= to; m++) {
+      // Build 2027 payloads (fromMonth → Dec 2027)
+      const payloads2027 = []
+      const endOf2027 = toYear === 2027 ? toMonth : 12
+      for (let m = from; m <= endOf2027; m++) {
         if (isPastMonth(m)) continue
-        payloads.push({ ...base, month: m })
+        payloads2027.push({ ...base, month: m })
       }
-      if (payloads.length === 0) { setActionMsg('All selected months are in the past.'); setSavingItem(false); return }
 
-      const { data, error } = await supabase
-        .from('budget_line_items').insert(payloads).select(LINE_SELECT)
-
-      if (error) { setActionMsg(`Error: ${error.message}`) }
-      else if (data) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const cast = (data as any[]).map((r: any) => ({
-          ...r, month: Number(r.month), amount: Number(r.amount), status: 'draft' as const,
-          approved_by_jeremiah: false, approved_by_joseph: false,
-          submitted_at: null, jeremiah_approved_at: null, joseph_approved_at: null, return_comment: null,
-        }))
-        setLineItems(prev => [...prev, ...cast])
-        await logAudit('insert', undefined, { count: payloads.length, account_code })
-        clearForm(account_code)
-        setActionMsg(`✓ ${payloads.length} monthly item${payloads.length > 1 ? 's' : ''} saved.`)
+      // Build 2028 payloads (Jan → toMonth 2028) — only when toYear === 2028
+      const payloads2028 = []
+      if (toYear === 2028) {
+        for (let m = 1; m <= toMonth; m++) {
+          if (!isPastMonth2028(m)) payloads2028.push({ ...base, scenario_id: SCENARIOS.DIRECTOR_2028, month: m })
+        }
       }
+
+      const totalCount = payloads2027.length + payloads2028.length
+      if (totalCount === 0) { setActionMsg('All selected months are in the past.'); setSavingItem(false); return }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const castItem = (r: any): LineItem => ({
+        ...r, month: Number(r.month), amount: Number(r.amount), status: 'draft' as const,
+        approved_by_jeremiah: false, approved_by_joseph: false,
+        submitted_at: null, jeremiah_approved_at: null, joseph_approved_at: null, return_comment: null,
+      })
+
+      // Insert 2027 items
+      if (payloads2027.length > 0) {
+        const { data, error } = await supabase.from('budget_line_items').insert(payloads2027).select(LINE_SELECT)
+        if (error) { setActionMsg(`Error (2027): ${error.message}`); setSavingItem(false); return }
+        if (data) setLineItems(prev => [...prev, ...(data as any[]).map(castItem)])
+      }
+
+      // Insert 2028 items (cross-year)
+      if (payloads2028.length > 0) {
+        const { data, error } = await supabase.from('budget_line_items').insert(payloads2028).select(LINE_SELECT)
+        if (error) { setActionMsg(`Error (2028): ${error.message}`); setSavingItem(false); return }
+        if (data) setLineItems2028(prev => [...prev, ...(data as any[]).map(castItem)])
+      }
+
+      await logAudit('insert', undefined, { count: totalCount, account_code, crossYear: toYear === 2028 })
+      clearForm(account_code)
+      const msg = toYear === 2028
+        ? `✓ ${payloads2027.length} item${payloads2027.length !== 1 ? 's' : ''} saved in 2027, ${payloads2028.length} item${payloads2028.length !== 1 ? 's' : ''} saved in 2028.`
+        : `✓ ${totalCount} monthly item${totalCount > 1 ? 's' : ''} saved.`
+      setActionMsg(msg)
     } else {
       const month = Number(addForm.month)
       if (isPastMonth(month)) { setActionMsg('That month is in the past and cannot be edited.'); setSavingItem(false); return }
@@ -2072,7 +2095,10 @@ export default function DashboardPage() {
   ]
 
   // Recurring preview
-  const recurringCount = Math.max(0, Number(addForm.toMonth) - Number(addForm.fromMonth) + 1)
+  const recurringCount = addForm.entryType !== 'recurring' ? 0
+    : addForm.toYear === 2028
+      ? Math.max(0, 12 - Number(addForm.fromMonth) + 1) + Math.max(0, Number(addForm.toMonth))
+      : Math.max(0, Number(addForm.toMonth) - Number(addForm.fromMonth) + 1)
   const recurringTotal = recurringCount * Number(addForm.amount || 0)
 
   return (
@@ -2481,16 +2507,40 @@ export default function DashboardPage() {
                                     <select value={addForm.fromMonth}
                                       onChange={e => setAddForm(f => ({ ...f, fromMonth: Number(e.target.value) }))}
                                       className="input-field" style={{ width: 100 }}>
-                                      {MONTH_NAMES.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+                                      {MONTH_NAMES.map((m, i) => <option key={i} value={i + 1}>{m} 2027</option>)}
                                     </select>
                                   </div>
                                   <div className="flex flex-col gap-1">
                                     <label className="text-xs font-semibold text-gray-500">To <span style={{ color: '#ff930c' }}>*</span></label>
-                                    <select value={addForm.toMonth}
-                                      onChange={e => setAddForm(f => ({ ...f, toMonth: Number(e.target.value) }))}
-                                      className="input-field" style={{ width: 100 }}>
-                                      {MONTH_NAMES.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
-                                    </select>
+                                    <div className="flex gap-1 items-center">
+                                      <select value={addForm.toMonth}
+                                        onChange={e => {
+                                          const toMonth = Number(e.target.value)
+                                          // If toYear=2028, cap at Mar (3)
+                                          setAddForm(f => ({ ...f, toMonth }))
+                                        }}
+                                        className="input-field" style={{ width: 100 }}>
+                                        {(addForm.toYear === 2028
+                                          ? MONTH_NAMES.slice(0, 3)
+                                          : MONTH_NAMES
+                                        ).map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+                                      </select>
+                                      {/* Year selector */}
+                                      <select value={addForm.toYear ?? 2027}
+                                        onChange={e => {
+                                          const toYear = Number(e.target.value)
+                                          setAddForm(f => ({
+                                            ...f,
+                                            toYear,
+                                            // If switching to 2028, cap toMonth at 3 (Mar)
+                                            toMonth: toYear === 2028 ? Math.min(f.toMonth, 3) : f.toMonth,
+                                          }))
+                                        }}
+                                        className="input-field" style={{ width: 80 }}>
+                                        <option value={2027}>2027</option>
+                                        <option value={2028}>2028</option>
+                                      </select>
+                                    </div>
                                   </div>
                                 </>
                               )}
@@ -2520,12 +2570,18 @@ export default function DashboardPage() {
 
                             {/* Recurring preview chip */}
                             {addForm.entryType === 'recurring' && Number(addForm.amount) > 0 && recurringCount > 0 && (
-                              <div className="flex items-center gap-2 text-xs font-semibold rounded-md px-3 py-2 w-fit"
+                              <div className="flex flex-wrap items-center gap-2 text-xs font-semibold rounded-md px-3 py-2 w-fit"
                                 style={{ background: 'rgba(49,108,127,.08)', color: '#316c7f' }}>
                                 🔁&nbsp;{recurringCount} month{recurringCount !== 1 ? 's' : ''} ×&nbsp;
                                 ${Number(addForm.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 &nbsp;=&nbsp;
                                 <strong>${recurringTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} total</strong>
+                                {addForm.toYear === 2028 && (
+                                  <span className="ml-1 px-2 py-0.5 rounded-full text-xs font-bold"
+                                    style={{ background: '#dbeafe', color: '#1d4ed8' }}>
+                                    {12 - Number(addForm.fromMonth) + 1} in 2027 · {Number(addForm.toMonth)} in 2028
+                                  </span>
+                                )}
                               </div>
                             )}
                           </div>
