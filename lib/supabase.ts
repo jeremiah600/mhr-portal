@@ -20,14 +20,13 @@ export const MONTHS = [
 ]
 
 export const DEPT_NAMES: Record<string, string> = {
-  '100': 'Operations',
-  '200': 'Human Resources',
-  '350': 'Payroll',
-  '450': 'Technology',
-  '550': 'Compliance',
-  '600': 'Accounting',
-  '700': 'Sales',
-  '800': 'IT / Systems',
-  '900': 'Executive',
-  '950': 'Marketing',
+  '100': 'Accounting',
+  '200': 'Benefits',
+  '350': 'Compliance',
+  '450': 'Resource Center',
+  '550': 'Client Services',
+  '600': 'Executives',
+  '800': 'Sales & Marketing',
+  '900': 'Payroll',
+  '950': 'IPT',
 }
