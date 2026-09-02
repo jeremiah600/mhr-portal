@@ -1793,7 +1793,7 @@ export default function DashboardPage() {
               </div>
             )}
             {accounts.length > 0 && <div className="overflow-x-auto">
-            <div className="min-w-[1200px]">
+            <div className="min-w-[1320px]">
             {/* Column headers — must match accordion row grid exactly */}
             <div className="hidden lg:grid text-xs font-bold uppercase tracking-widest text-gray-400 px-4"
               style={{ gridTemplateColumns: '280px repeat(12, 72px) 120px 52px' }}>
