@@ -464,7 +464,7 @@ export default function DashboardPage() {
           submitted_at: null, jeremiah_approved_at: null, joseph_approved_at: null, return_comment: null,
         }
         setLineItems(prev => [...prev, item])
-        await logAudit('insert', data.id, { account_code })
+        await logAudit('insert', d.id, { account_code })
         clearForm(account_code)
         setActionMsg('✓ Item saved.')
       }
