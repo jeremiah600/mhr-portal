@@ -245,7 +245,8 @@ export default function DashboardPage() {
       loadWindows(),
     ])
 
-    const cast = (r: Record<string, unknown>): LineItem => ({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const cast = (r: any): LineItem => ({
       id: r.id as string,
       account_code: r.account_code as string,
       description: r.description as string,
@@ -311,7 +312,7 @@ export default function DashboardPage() {
       .eq('status', 'submitted')
       .order('submitted_at')
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    setPendingItems(((data ?? []) as any[]).map((r: Record<string, unknown>) => ({
+    setPendingItems(((data ?? []) as any[]).map((r: any) => ({
       id: r.id as string,
       dept_code: r.dept_code as string,
       account_code: r.account_code as string,
@@ -436,8 +437,8 @@ export default function DashboardPage() {
       if (error) { setActionMsg(`Error: ${error.message}`) }
       else if (data) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const cast = (data as any[]).map((r: Record<string, unknown>) => ({
-          ...(r as LineItem), amount: Number(r.amount), status: 'draft' as const,
+        const cast = (data as any[]).map((r: any) => ({
+          ...r, amount: Number(r.amount), status: 'draft' as const,
           approved_by_jeremiah: false, approved_by_joseph: false,
           submitted_at: null, jeremiah_approved_at: null, joseph_approved_at: null, return_comment: null,
         }))
