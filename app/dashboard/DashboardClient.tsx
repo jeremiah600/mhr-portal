@@ -310,7 +310,8 @@ export default function DashboardPage() {
       .eq('scenario_id', SCENARIOS.DIRECTOR_2027)
       .eq('status', 'submitted')
       .order('submitted_at')
-    setPendingItems((data ?? []).map((r: Record<string, unknown>) => ({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    setPendingItems(((data ?? []) as any[]).map((r: Record<string, unknown>) => ({
       id: r.id as string,
       dept_code: r.dept_code as string,
       account_code: r.account_code as string,
