@@ -1443,11 +1443,30 @@ export default function DashboardPage() {
 
     return (
       <div className="space-y-3">
-        <div className="bg-white rounded-lg border px-4 py-3 flex items-center gap-2 text-xs text-gray-500"
-          style={{ borderColor: '#e5e7eb', background: '#f0f9ff' }}>
-          <span style={{ color: '#0369a1' }}>ℹ</span>
-          <span><strong>2028 Budget Input</strong> — Enter January–March 2028 items here.
-          {items.length === 0 ? ' Admins can seed this from Q1 2027 data using the Admin tab.' : ` ${items.length} item${items.length !== 1 ? 's' : ''} entered so far.`}</span>
+        {/* Info banner + copy button */}
+        <div className="bg-white rounded-lg border px-4 py-3 flex items-center justify-between gap-3"
+          style={{ borderColor: '#bae6fd', background: '#f0f9ff' }}>
+          <div className="flex items-center gap-2 text-xs text-gray-500 min-w-0">
+            <span style={{ color: '#0369a1', flexShrink: 0 }}>ℹ</span>
+            <span><strong>2028 Budget Input</strong> — Jan–Mar 2028.
+              {items.length === 0
+                ? ' No items yet — use the button to seed from your Q1 2027 budget, or add manually below.'
+                : ` ${items.length} item${items.length !== 1 ? 's' : ''} entered so far.`}
+            </span>
+          </div>
+          <div className="flex flex-col items-end gap-1 flex-shrink-0">
+            <button onClick={handleCopyQ1To2028} disabled={copyingQ1}
+              className="text-xs font-semibold px-3 py-1.5 rounded whitespace-nowrap transition-opacity"
+              style={{ background: '#0369a1', color: '#fff', opacity: copyingQ1 ? 0.6 : 1, cursor: copyingQ1 ? 'wait' : 'pointer' }}>
+              {copyingQ1 ? 'Copying…' : '📋 Copy from Q1 2027'}
+            </button>
+            {copy2028Msg && (
+              <span className="text-xs font-semibold"
+                style={{ color: copy2028Msg.startsWith('✓') ? '#065f46' : '#991b1b' }}>
+                {copy2028Msg}
+              </span>
+            )}
+          </div>
         </div>
 
         {displayAccts.length === 0 && (
@@ -1593,24 +1612,26 @@ export default function DashboardPage() {
     setCopyingQ1(true)
     setCopy2028Msg('')
     try {
-      // Fetch all Q1 (months 1-3) items from 2027 for all departments
+      // Fetch Q1 (months 1-3) items from 2027 for this department only
       const { data: q1Items, error: fetchErr } = await supabase
         .from('budget_line_items')
         .select('account_code, description, employee_name, vendor, notes, month, amount, dept_code')
         .eq('scenario_id', SCENARIOS.DIRECTOR_2027)
+        .eq('dept_code', activeDept)
         .in('month', [1, 2, 3])
       if (fetchErr) { setCopy2028Msg(`Error: ${fetchErr.message}`); setCopyingQ1(false); return }
       if (!q1Items || q1Items.length === 0) {
-        setCopy2028Msg('No Q1 2027 items found to copy.')
+        setCopy2028Msg('No Q1 2027 items found for your department to copy.')
         setCopyingQ1(false); return
       }
-      // Check which already exist in 2028 to avoid duplicates
+      // Check for existing 2028 items for this dept only
       const { data: existing } = await supabase
         .from('budget_line_items')
         .select('id')
         .eq('scenario_id', SCENARIOS.DIRECTOR_2028)
+        .eq('dept_code', activeDept)
       if (existing && existing.length > 0) {
-        setCopy2028Msg(`2028 already has ${existing.length} item(s). Clear them first if you want a fresh seed.`)
+        setCopy2028Msg(`Your 2028 budget already has ${existing.length} item(s). Delete them first if you want a fresh copy.`)
         setCopyingQ1(false); return
       }
       // Insert copies with status=draft
@@ -1628,8 +1649,8 @@ export default function DashboardPage() {
       }))
       const { error: insertErr } = await supabase.from('budget_line_items').insert(payloads)
       if (insertErr) { setCopy2028Msg(`Insert error: ${insertErr.message}`); setCopyingQ1(false); return }
-      setCopy2028Msg(`✓ Copied ${payloads.length} Q1 items (Jan–Mar) from 2027 to 2028 across all departments.`)
-      // Refresh 2028 items for current dept
+      setCopy2028Msg(`✓ Copied ${payloads.length} Q1 item${payloads.length !== 1 ? 's' : ''} (Jan–Mar) from your 2027 budget into 2028.`)
+      // Refresh 2028 items
       const { data: fresh } = await supabase
         .from('budget_line_items').select(LINE_SELECT)
         .eq('scenario_id', SCENARIOS.DIRECTOR_2028).eq('dept_code', activeDept)
@@ -1724,8 +1745,8 @@ export default function DashboardPage() {
                 Seed 2028 Q1 Budget
               </h3>
               <p className="text-xs text-gray-500 mt-1">
-                Copies all Jan–Mar 2027 expense items (all departments) into the 2028 budget as drafts.
-                Directors can then delete items that no longer apply. Only works once — blocked if 2028 already has data.
+                Copies Jan–Mar 2027 expense items for the currently selected department into 2028 as drafts.
+                Each director runs this for their own department. Blocked if that dept already has 2028 data.
               </p>
             </div>
             <button onClick={handleCopyQ1To2028} disabled={copyingQ1}
