@@ -31,7 +31,7 @@ function rowTotal(cells: CellMap, account_code: string): number {
     .reduce((a, b) => a + b, 0)
 }
 
-// ─── Component ────────────────────────────────────────────────────────────────
+// ─── Component ────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
   const router = useRouter()
@@ -81,7 +81,6 @@ export default function DashboardPage() {
     setLoading(true)
     setSaveMsg('')
 
-    // 1. Fetch 2026 reference (BI_BUDGET_2026)
     const { data: refRows } = await supabase
       .from('budget_lines')
       .select('account_code, is_code, month, amount')
@@ -89,7 +88,6 @@ export default function DashboardPage() {
       .eq('dept_code', dept)
       .order('account_code')
 
-    // 2. Fetch existing 2027 director input
     const { data: inputRows } = await supabase
       .from('budget_lines')
       .select('account_code, month, amount')
@@ -97,19 +95,17 @@ export default function DashboardPage() {
       .eq('dept_code', dept)
       .eq('source', 'DIRECTOR_INPUT')
 
-    // 3. Build account list from reference data + try gl_accounts descriptions
     const accountMap = new Map<string, AccountMeta>()
     for (const row of refRows ?? []) {
       if (!accountMap.has(row.account_code)) {
         accountMap.set(row.account_code, {
           account_code: row.account_code,
-          description: row.account_code, // fallback
+          description: row.account_code,
           is_code: row.is_code,
         })
       }
     }
 
-    // 4. Try to enrich with GL descriptions
     if (accountMap.size > 0) {
       const codes = Array.from(accountMap.keys())
       const { data: glRows } = await supabase
@@ -123,13 +119,11 @@ export default function DashboardPage() {
       }
     }
 
-    // 5. Build reference cell map
     const refMap: CellMap = {}
     for (const row of refRows ?? []) {
       refMap[cellKey(row.account_code, row.month)] = String(row.amount ?? 0)
     }
 
-    // 6. Build input cell map (pre-fill from existing DIRECTOR_INPUT)
     const inputMap: CellMap = {}
     for (const row of inputRows ?? []) {
       inputMap[cellKey(row.account_code, row.month)] = String(row.amount ?? 0)
@@ -210,7 +204,7 @@ export default function DashboardPage() {
 
   if (!profile) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center" style={{ background: '#f0f6f7' }}>
         <div className="text-gray-400 text-sm">Loading…</div>
       </div>
     )
@@ -220,38 +214,70 @@ export default function DashboardPage() {
   const isAdmin = profile.role === 'admin'
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen" style={{ background: '#f0f6f7' }}>
       {/* ── Header ──────────────────────────────────────────────────────────── */}
-      <header className="bg-blue-800 text-white shadow-md">
-        <div className="max-w-screen-xl mx-auto px-4 py-3 flex items-center justify-between">
+      <header
+        className="sticky top-0 z-50 shadow-md"
+        style={{ background: 'linear-gradient(135deg, #1e4757 0%, #316c7f 100%)' }}
+      >
+        <div className="max-w-screen-xl mx-auto px-6 py-0 flex items-center justify-between h-[60px]">
           <div className="flex items-center gap-3">
-            <span className="text-2xl">📊</span>
+            {/* Logo icon */}
+            <div
+              className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+              style={{ background: 'rgba(255,255,255,.13)' }}
+            >
+              <svg width="20" height="20" viewBox="0 0 22 22" fill="none">
+                <rect x="1" y="5" width="20" height="14" rx="2" stroke="white" strokeWidth="1.5"/>
+                <path d="M1 9h20" stroke="white" strokeWidth="1.5"/>
+                <circle cx="5" cy="14" r="1.5" fill="white"/>
+                <rect x="9" y="13" width="9" height="2" rx="1" fill="white" fillOpacity=".6"/>
+              </svg>
+            </div>
             <div>
-              <h1 className="font-bold text-lg leading-tight">MHR Operations Portal</h1>
-              <p className="text-blue-200 text-xs">Budget Planning</p>
+              <h1 className="font-extrabold text-base text-white leading-tight tracking-tight">
+                My HR Pros
+              </h1>
+              <p className="text-xs font-semibold tracking-widest uppercase" style={{ color: '#7bc6c8' }}>
+                Operations Portal · Budget Planning
+              </p>
             </div>
           </div>
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-blue-200 hidden sm:block">{userEmail}</span>
+
+          <div className="flex items-center gap-3">
+            <span className="text-sm hidden sm:block" style={{ color: '#7bc6c8' }}>{userEmail}</span>
             {isAdmin && (
-              <span className="bg-yellow-400 text-yellow-900 text-xs font-bold px-2 py-0.5 rounded">
-                ADMIN
+              <span
+                className="text-xs font-extrabold px-2 py-0.5 rounded tracking-widest uppercase"
+                style={{ background: '#ff930c', color: '#fff' }}
+              >
+                Admin
               </span>
             )}
-            <button onClick={handleSignOut} className="btn-secondary text-sm py-1.5">
+            <button
+              onClick={handleSignOut}
+              className="text-sm font-semibold px-3 py-1.5 rounded transition-colors"
+              style={{
+                color: 'rgba(255,255,255,.85)',
+                background: 'rgba(255,255,255,.12)',
+                border: '1px solid rgba(255,255,255,.2)',
+              }}
+            >
               Sign out
             </button>
           </div>
         </div>
       </header>
 
-      <main className="max-w-screen-xl mx-auto px-4 py-6">
-        {/* ── Dept selector (admin only) ──────────────────────────────────── */}
-        <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+      <main className="max-w-screen-xl mx-auto px-6 py-6">
+        {/* ── Dept selector / toolbar ─────────────────────────────────────── */}
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-5">
           <div>
             {isAdmin ? (
               <div className="flex items-center gap-2">
-                <label className="text-sm font-medium text-gray-700">Department:</label>
+                <label className="text-xs font-bold uppercase tracking-widest text-gray-500">
+                  Department:
+                </label>
                 <select
                   value={activeDept}
                   onChange={e => setActiveDept(e.target.value)}
@@ -264,26 +290,25 @@ export default function DashboardPage() {
               </div>
             ) : (
               <div>
-                <h2 className="text-xl font-bold text-gray-900">{deptLabel}</h2>
-                <p className="text-sm text-gray-500">Department {activeDept}</p>
+                <h2 className="text-xl font-extrabold" style={{ color: '#316c7f' }}>{deptLabel}</h2>
+                <p className="text-xs text-gray-500 mt-0.5">Department {activeDept}</p>
               </div>
             )}
           </div>
 
-          {/* Save button — only shown on input tab */}
           {activeTab === 'input' && (
             <div className="flex items-center gap-3">
               {saveMsg && (
-                <span className={`text-sm ${saveMsg.startsWith('✓') ? 'text-green-600' : 'text-red-600'}`}>
+                <span className={`text-sm font-semibold ${saveMsg.startsWith('✓') ? 'text-green-600' : 'text-red-600'}`}>
                   {saveMsg}
                 </span>
               )}
               {dirty.size > 0 && (
-                <span className="text-xs text-amber-600 font-medium">
+                <span className="text-xs font-semibold text-amber-600">
                   {dirty.size} unsaved change{dirty.size !== 1 ? 's' : ''}
                 </span>
               )}
-              <button onClick={handleSave} disabled={saving} className="btn-primary">
+              <button onClick={handleSave} disabled={saving} className="btn-primary text-sm">
                 {saving ? 'Saving…' : 'Save Budget'}
               </button>
             </div>
@@ -291,55 +316,69 @@ export default function DashboardPage() {
         </div>
 
         {/* ── Tabs ────────────────────────────────────────────────────────── */}
-        <div className="flex gap-1 mb-4 border-b border-gray-200">
-          <button
-            onClick={() => setActiveTab('input')}
-            className={`px-4 py-2 text-sm font-medium rounded-t-md border border-b-0 transition-colors ${
-              activeTab === 'input'
-                ? 'bg-white border-gray-200 text-blue-700 -mb-px'
-                : 'bg-gray-100 border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            2027 Budget Input
-          </button>
-          <button
-            onClick={() => setActiveTab('reference')}
-            className={`px-4 py-2 text-sm font-medium rounded-t-md border border-b-0 transition-colors ${
-              activeTab === 'reference'
-                ? 'bg-white border-gray-200 text-blue-700 -mb-px'
-                : 'bg-gray-100 border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            2026 Approved Budget (Reference)
-          </button>
+        <div
+          className="flex gap-1 mb-4"
+          style={{ borderBottom: '2px solid #e5e7eb' }}
+        >
+          {(['input', 'reference'] as const).map(tab => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className="px-4 py-2.5 text-sm font-bold transition-colors"
+              style={{
+                borderBottom: activeTab === tab ? '2px solid #316c7f' : '2px solid transparent',
+                marginBottom: '-2px',
+                color: activeTab === tab ? '#316c7f' : '#6b7280',
+                background: 'transparent',
+                border: 'none',
+                borderBottom: activeTab === tab ? '2px solid #316c7f' : '2px solid transparent',
+                cursor: 'pointer',
+              }}
+            >
+              {tab === 'input' ? '2027 Budget Input' : '2026 Approved Budget (Reference)'}
+            </button>
+          ))}
         </div>
 
         {/* ── Budget Grid ─────────────────────────────────────────────────── */}
         {loading ? (
           <div className="flex items-center justify-center h-48">
-            <div className="text-gray-400">Loading budget data…</div>
+            <div className="text-gray-400 text-sm">Loading budget data…</div>
           </div>
         ) : accounts.length === 0 ? (
-          <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-400">
+          <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-400 text-sm">
             No budget lines found for this department.
           </div>
         ) : (
           <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-x-auto">
-            <table className="min-w-full text-sm">
+            <table className="min-w-full text-sm" style={{ fontVariantNumeric: 'tabular-nums' }}>
               <thead>
-                <tr className="bg-gray-50 border-b border-gray-200">
-                  <th className="text-left px-4 py-3 font-semibold text-gray-700 w-36 sticky left-0 bg-gray-50">
+                <tr style={{ background: '#e8f4f6', borderBottom: '2px solid rgba(49,108,127,.18)' }}>
+                  <th
+                    className="text-left px-4 py-3 sticky left-0"
+                    style={{ background: '#e8f4f6', fontSize: 11, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: '#316c7f' }}
+                  >
                     GL Code
                   </th>
-                  <th className="text-left px-4 py-3 font-semibold text-gray-700 min-w-48 sticky left-36 bg-gray-50">
+                  <th
+                    className="text-left px-4 py-3 sticky left-36"
+                    style={{ background: '#e8f4f6', fontSize: 11, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: '#316c7f', minWidth: 180 }}
+                  >
                     Description
                   </th>
                   {MONTHS.map(m => (
-                    <th key={m} className="text-right px-2 py-3 font-semibold text-gray-700 w-24">
+                    <th
+                      key={m}
+                      className="text-right px-2 py-3"
+                      style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: '#316c7f', width: 90 }}
+                    >
                       {m}
                     </th>
                   ))}
-                  <th className="text-right px-3 py-3 font-semibold text-gray-700 w-28">
+                  <th
+                    className="text-right px-4 py-3"
+                    style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: '#316c7f', width: 110 }}
+                  >
                     Total
                   </th>
                 </tr>
@@ -353,18 +392,18 @@ export default function DashboardPage() {
                   return (
                     <tr
                       key={acct.account_code}
-                      className={`border-b border-gray-100 ${
-                        idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
-                      } ${isDirty ? 'ring-1 ring-inset ring-amber-200' : ''}`}
+                      className="border-b border-gray-100 transition-colors hover:bg-blue-50/30"
+                      style={{
+                        background: idx % 2 === 0 ? '#fff' : 'rgba(0,0,0,.018)',
+                        boxShadow: isDirty ? 'inset 3px 0 0 #f59e0b' : undefined,
+                      }}
                     >
-                      <td className="px-4 py-2 font-mono text-xs text-gray-600 sticky left-0 bg-inherit">
+                      <td className="px-4 py-2 sticky left-0 bg-inherit font-mono text-xs text-gray-500 font-semibold tracking-wide">
                         {acct.account_code}
+                        {isDirty && <span className="ml-1 text-amber-400" style={{ fontSize: 8 }}>●</span>}
                       </td>
-                      <td className="px-4 py-2 text-gray-800 sticky left-36 bg-inherit">
+                      <td className="px-4 py-2 sticky left-36 bg-inherit text-gray-800">
                         {acct.description}
-                        {isDirty && (
-                          <span className="ml-2 text-xs text-amber-500">●</span>
-                        )}
                       </td>
                       {Array.from({ length: 12 }, (_, i) => i + 1).map(month => {
                         const key = cellKey(acct.account_code, month)
@@ -392,7 +431,7 @@ export default function DashboardPage() {
                           </td>
                         )
                       })}
-                      <td className="px-3 py-2 text-right font-semibold text-gray-900">
+                      <td className="px-4 py-2 text-right font-bold" style={{ color: '#316c7f' }}>
                         {total !== 0
                           ? total.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
                           : <span className="text-gray-300">—</span>
@@ -403,9 +442,16 @@ export default function DashboardPage() {
                 })}
 
                 {/* Grand total row */}
-                <tr className="bg-blue-50 border-t-2 border-blue-200 font-semibold">
-                  <td colSpan={2} className="px-4 py-3 text-gray-800 sticky left-0 bg-blue-50">
-                    Total
+                <tr
+                  className="font-bold"
+                  style={{ background: 'rgba(49,108,127,.08)', borderTop: '2px solid rgba(49,108,127,.25)' }}
+                >
+                  <td
+                    colSpan={2}
+                    className="px-4 py-3 sticky left-0"
+                    style={{ background: 'rgba(49,108,127,.08)', color: '#316c7f', fontSize: 13, fontWeight: 800, letterSpacing: '.01em' }}
+                  >
+                    Total — {deptLabel}
                   </td>
                   {Array.from({ length: 12 }, (_, i) => i + 1).map(month => {
                     const cells = activeTab === 'input' ? inputs : reference
@@ -413,7 +459,7 @@ export default function DashboardPage() {
                       return sum + Number(cells[cellKey(acct.account_code, month)] || 0)
                     }, 0)
                     return (
-                      <td key={month} className="px-2 py-3 text-right text-gray-800">
+                      <td key={month} className="px-2 py-3 text-right" style={{ color: '#316c7f' }}>
                         {colTotal !== 0
                           ? colTotal.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
                           : <span className="text-gray-400">—</span>
@@ -421,7 +467,7 @@ export default function DashboardPage() {
                       </td>
                     )
                   })}
-                  <td className="px-3 py-3 text-right text-blue-800">
+                  <td className="px-4 py-3 text-right" style={{ color: '#1e4757', fontSize: 13.5, fontWeight: 800 }}>
                     {accounts.reduce((sum, acct) => {
                       const cells = activeTab === 'input' ? inputs : reference
                       return sum + rowTotal(cells, acct.account_code)
@@ -433,10 +479,9 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* ── Helper note ─────────────────────────────────────────────────── */}
         {activeTab === 'input' && !loading && (
-          <p className="text-xs text-gray-400 mt-3">
-            Enter your 2027 monthly budget amounts for each GL account. Switch to the Reference tab to see your approved 2026 budget. Click <strong>Save Budget</strong> when done — you can return and revise at any time.
+          <p className="text-xs text-gray-400 mt-3 leading-relaxed">
+            Enter your 2027 monthly budget amounts for each GL account. Switch to the Reference tab to compare against your approved 2026 figures. Click <strong>Save Budget</strong> when done — you can return and revise at any time.
           </p>
         )}
       </main>
