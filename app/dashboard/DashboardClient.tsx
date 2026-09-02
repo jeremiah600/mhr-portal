@@ -331,8 +331,7 @@ export default function DashboardPage() {
                 color: activeTab === tab ? '#316c7f' : '#6b7280',
                 background: 'transparent',
                 border: 'none',
-                borderBottom: activeTab === tab ? '2px solid #316c7f' : '2px solid transparent',
-                cursor: 'pointer',
+		cursor: 'pointer',
               }}
             >
               {tab === 'input' ? '2027 Budget Input' : '2026 Approved Budget (Reference)'}
