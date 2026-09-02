@@ -263,9 +263,12 @@ export default function DashboardPage() {
       return_comment: r.return_comment as string | null,
     })
 
-    const items2025 = (res2025.data ?? []).map(cast)
-    const items2026 = (res2026.data ?? []).map(cast)
-    const items2027 = (res2027.data ?? []).map(cast)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const items2025 = ((res2025.data ?? []) as any[]).map(cast)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const items2026 = ((res2026.data ?? []) as any[]).map(cast)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const items2027 = ((res2027.data ?? []) as any[]).map(cast)
 
     const allCodes = [...new Set([...items2025, ...items2026, ...items2027].map(i => i.account_code))].sort()
     let glDesc: Record<string, string> = {}
