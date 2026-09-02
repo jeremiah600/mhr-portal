@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient, SCENARIOS } from '@/lib/supabase'
 
@@ -142,6 +142,14 @@ function isPastMonth(month: number): boolean {
   return month < now.getMonth() + 1
 }
 
+/** All 2028 months are future (2028 hasn't started yet) */
+function isPastMonth2028(_month: number): boolean {
+  const now = new Date()
+  if (now.getFullYear() < 2028) return false
+  if (now.getFullYear() > 2028) return true
+  return _month < now.getMonth() + 1
+}
+
 const emptyForm = () => ({
   description: '',
   employee_name: '',
@@ -151,6 +159,7 @@ const emptyForm = () => ({
   month: 1,
   fromMonth: 1,
   toMonth: 12,
+  toYear: 2027,
   amount: '',
 })
 
@@ -212,6 +221,104 @@ function StatusBadge({ item }: { item: StatusFields }) {
   )
 }
 
+// ─── AddForm2028 ─────────────────────────────────────────────────────────────
+// Standalone sub-component so it keeps its own state between parent re-renders.
+
+function AddForm2028({
+  acctCode,
+  onSave,
+}: {
+  acctCode: string
+  onSave: (account_code: string, formData: ReturnType<typeof emptyForm>) => Promise<void>
+}) {
+  const [form, setForm] = useState(emptyForm)
+  const [saving, setSaving] = useState(false)
+
+  async function handleSubmit() {
+    if (!form.amount || Number(form.amount) <= 0) return
+    setSaving(true)
+    // Force months to Q1 range
+    const adjusted: ReturnType<typeof emptyForm> = {
+      ...form,
+      fromMonth: form.entryType === 'recurring' ? Math.max(1, Math.min(form.fromMonth, 3)) : form.fromMonth,
+      toMonth:   form.entryType === 'recurring' ? Math.max(1, Math.min(form.toMonth, 3))   : form.toMonth,
+      month:     form.entryType === 'once'      ? Math.max(1, Math.min(form.month, 3))     : form.month,
+    }
+    await onSave(acctCode, adjusted)
+    setForm(emptyForm())
+    setSaving(false)
+  }
+
+  const Q1 = [{ v: 1, l: 'Jan 2028' }, { v: 2, l: 'Feb 2028' }, { v: 3, l: 'Mar 2028' }]
+
+  const inputCls = "border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 w-full"
+  const inputStyle = { borderColor: '#e5e7eb' }
+  const focusStyle = { '--tw-ring-color': '#316c7f' } as React.CSSProperties
+
+  return (
+    <div className="px-4 py-3 border-t" style={{ borderColor: 'rgba(49,108,127,.1)', background: 'rgba(49,108,127,.02)' }}>
+      <p className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: '#316c7f' }}>Add 2028 Item</p>
+
+      {/* Entry type toggle */}
+      <div className="flex gap-1 mb-2">
+        {(['once', 'recurring'] as const).map(type => (
+          <button key={type} onClick={() => setForm(f => ({ ...f, entryType: type }))}
+            className="px-3 py-1 rounded text-xs font-semibold transition-colors"
+            style={{
+              background: form.entryType === type ? '#316c7f' : 'transparent',
+              color: form.entryType === type ? '#fff' : '#6b7280',
+              border: '1px solid',
+              borderColor: form.entryType === type ? '#316c7f' : '#e5e7eb',
+            }}>
+            {type === 'once' ? 'One-time' : 'Recurring'}
+          </button>
+        ))}
+      </div>
+
+      <div className="grid gap-2" style={{ gridTemplateColumns: '1fr 1fr' }}>
+        <input className={inputCls} style={{ ...inputStyle, ...focusStyle }} placeholder="Description"
+          value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
+        <input className={inputCls} style={{ ...inputStyle, ...focusStyle }} placeholder="Employee name"
+          value={form.employee_name} onChange={e => setForm(f => ({ ...f, employee_name: e.target.value }))} />
+        <input className={inputCls} style={{ ...inputStyle, ...focusStyle }} placeholder="Vendor"
+          value={form.vendor} onChange={e => setForm(f => ({ ...f, vendor: e.target.value }))} />
+        <input className={inputCls} style={{ ...inputStyle, ...focusStyle }} placeholder="Notes"
+          value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
+      </div>
+
+      <div className="flex flex-wrap gap-2 mt-2 items-end">
+        {form.entryType === 'once' && (
+          <select className={inputCls} style={{ ...inputStyle, width: 'auto' }}
+            value={form.month} onChange={e => setForm(f => ({ ...f, month: Number(e.target.value) }))}>
+            {Q1.map(({ v, l }) => <option key={v} value={v}>{l}</option>)}
+          </select>
+        )}
+        {form.entryType === 'recurring' && (
+          <>
+            <select className={inputCls} style={{ ...inputStyle, width: 'auto' }}
+              value={form.fromMonth} onChange={e => setForm(f => ({ ...f, fromMonth: Number(e.target.value) }))}>
+              {Q1.map(({ v, l }) => <option key={v} value={v}>{l}</option>)}
+            </select>
+            <span className="text-xs text-gray-400 self-center">to</span>
+            <select className={inputCls} style={{ ...inputStyle, width: 'auto' }}
+              value={form.toMonth} onChange={e => setForm(f => ({ ...f, toMonth: Number(e.target.value) }))}>
+              {Q1.map(({ v, l }) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </>
+        )}
+        <input className={inputCls} style={{ ...inputStyle, width: '120px', fontVariantNumeric: 'tabular-nums' }}
+          type="number" step="0.01" min="0" placeholder="Amount *"
+          value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} />
+        <button onClick={handleSubmit} disabled={saving || !form.amount || Number(form.amount) <= 0}
+          className="px-4 py-1.5 rounded text-sm font-semibold transition-opacity whitespace-nowrap"
+          style={{ background: '#316c7f', color: '#fff', opacity: saving || !form.amount ? 0.5 : 1, cursor: saving ? 'wait' : 'pointer' }}>
+          {saving ? 'Saving…' : '+ Add'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
@@ -222,12 +329,13 @@ export default function DashboardPage() {
   const [userEmail, setUserEmail] = useState('')
   const [userId, setUserId] = useState('')
   const [activeDept, setActiveDept] = useState<string>('')
-  const [activeTab, setActiveTab] = useState<'input' | 'ref2026' | 'ref2025' | 'admin'>('input')
+  const [activeTab, setActiveTab] = useState<'input' | 'input2028' | 'ref2026' | 'ref2025' | 'admin'>('input')
 
   const [deptNames, setDeptNames] = useState<Record<string, string>>({})
   const [accounts, setAccounts] = useState<AccountMeta[]>([])
   const [glDescriptions, setGlDescriptions] = useState<Record<string, string>>({})
   const [lineItems, setLineItems] = useState<LineItem[]>([])
+  const [lineItems2028, setLineItems2028] = useState<LineItem[]>([])
   const [ref2026Items, setRef2026Items] = useState<LineItem[]>([])
   const [ref2025Items, setRef2025Items] = useState<LineItem[]>([])
 
@@ -277,6 +385,8 @@ export default function DashboardPage() {
   const [submittingId, setSubmittingId] = useState<string | null>(null)
   const [approvingId, setApprovingId] = useState<string | null>(null)
   const [togglingWindow, setTogglingWindow] = useState<string | null>(null)
+  const [copyingQ1, setCopyingQ1] = useState(false)
+  const [copy2028Msg, setCopy2028Msg] = useState('')
 
   // ── Auto-save form to localStorage ────────────────────────────────────────
 
@@ -341,7 +451,7 @@ export default function DashboardPage() {
     setLoading(true)
     setActionMsg('')
 
-    const [res2025, res2026, res2027, wins, resHires, resCerts] = await Promise.all([
+    const [res2025, res2026, res2027, res2028, wins, resHires, resCerts] = await Promise.all([
       supabase
         .from('budget_line_items')
         .select(LINE_SELECT)
@@ -358,6 +468,12 @@ export default function DashboardPage() {
         .from('budget_line_items')
         .select(LINE_SELECT)
         .eq('scenario_id', SCENARIOS.DIRECTOR_2027)
+        .eq('dept_code', dept)
+        .order('account_code').order('created_at'),
+      supabase
+        .from('budget_line_items')
+        .select(LINE_SELECT)
+        .eq('scenario_id', SCENARIOS.DIRECTOR_2028)
         .eq('dept_code', dept)
         .order('account_code').order('created_at'),
       loadWindows(),
@@ -400,8 +516,11 @@ export default function DashboardPage() {
     const items2026 = ((res2026.data ?? []) as any[]).map(cast)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const items2027 = ((res2027.data ?? []) as any[]).map(cast)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const items2028 = ((res2028.data ?? []) as any[]).map(cast)
+    setLineItems2028(items2028)
 
-    const allCodes = [...new Set([...items2025, ...items2026, ...items2027].map(i => i.account_code))].sort()
+    const allCodes = [...new Set([...items2025, ...items2026, ...items2027, ...items2028].map(i => i.account_code))].sort()
     let glDesc: Record<string, string> = {}
     if (allCodes.length > 0) {
       const { data: glRows } = await supabase
@@ -1249,6 +1368,289 @@ export default function DashboardPage() {
 
   // ── Admin panel ───────────────────────────────────────────────────────────
 
+  // ── 2028 Budget Input renderer ─────────────────────────────────────────────
+
+  function render2028Input() {
+    const items = lineItems2028
+    const acctCodes = [...new Set(items.map(i => i.account_code))].sort()
+    const accts2028: AccountMeta[] = acctCodes.map(code => ({
+      account_code: code,
+      description: glDescriptions[code] ?? code,
+    }))
+    // Also show any 2027 GL accounts for this dept (to allow adding new 2028 entries)
+    const allAccts = accounts.length > 0 ? accounts : accts2028
+    const displayAccts = [...new Set([...accts2028.map(a => a.account_code), ...allAccts.map(a => a.account_code)])].sort()
+      .map(code => ({ account_code: code, description: glDescriptions[code] ?? code }))
+
+    const grandTotal = items.reduce((s, i) => s + i.amount, 0)
+
+    async function handle2028Delete(item: LineItem) {
+      if (!confirm('Delete this 2028 budget item?')) return
+      const { error } = await supabase.from('budget_line_items').delete().eq('id', item.id)
+      if (!error) setLineItems2028(prev => prev.filter(i => i.id !== item.id))
+    }
+
+    async function handle2028Add(account_code: string, formData: ReturnType<typeof emptyForm>) {
+      const amt = parseFloat(formData.amount)
+      if (!amt || amt <= 0) return
+      const base = {
+        scenario_id: SCENARIOS.DIRECTOR_2028,
+        dept_code: activeDept,
+        account_code,
+        description: formData.description.trim(),
+        employee_name: formData.employee_name.trim(),
+        vendor: formData.vendor.trim(),
+        notes: formData.notes.trim(),
+        amount: amt,
+        status: 'draft',
+      }
+      if (formData.entryType === 'recurring') {
+        const from = Number(formData.fromMonth)
+        const to = Number(formData.toMonth)
+        const payloads = []
+        for (let m = from; m <= Math.min(to, 12); m++) {
+          if (!isPastMonth2028(m)) payloads.push({ ...base, month: m })
+        }
+        if (payloads.length === 0) { setActionMsg('All selected months are in the past.'); return }
+        const { data, error } = await supabase.from('budget_line_items').insert(payloads).select(LINE_SELECT)
+        if (error) { setActionMsg(`Error: ${error.message}`); return }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const cast = (r: any): LineItem => ({
+          id: r.id, account_code: r.account_code, description: r.description,
+          employee_name: r.employee_name, vendor: r.vendor, notes: r.notes,
+          month: Number(r.month), amount: Number(r.amount), status: 'draft',
+          submitted_at: null, approved_by_jeremiah: false, jeremiah_approved_at: null,
+          approved_by_joseph: false, joseph_approved_at: null, return_comment: null,
+        })
+        if (data) setLineItems2028(prev => [...prev, ...(data as any[]).map(cast)])
+        setActionMsg(`✓ ${payloads.length} 2028 monthly item${payloads.length > 1 ? 's' : ''} saved.`)
+      } else {
+        const month = Number(formData.month)
+        const { data, error } = await supabase.from('budget_line_items').insert({ ...base, month }).select(LINE_SELECT).single()
+        if (error) { setActionMsg(`Error: ${error.message}`); return }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const d = data as any
+        setLineItems2028(prev => [...prev, {
+          id: d.id, account_code: d.account_code, description: d.description,
+          employee_name: d.employee_name, vendor: d.vendor, notes: d.notes,
+          month: Number(d.month), amount: Number(d.amount), status: 'draft',
+          submitted_at: null, approved_by_jeremiah: false, jeremiah_approved_at: null,
+          approved_by_joseph: false, joseph_approved_at: null, return_comment: null,
+        }])
+        setActionMsg('✓ 2028 item saved.')
+      }
+    }
+
+    return (
+      <div className="space-y-3">
+        <div className="bg-white rounded-lg border px-4 py-3 flex items-center gap-2 text-xs text-gray-500"
+          style={{ borderColor: '#e5e7eb', background: '#f0f9ff' }}>
+          <span style={{ color: '#0369a1' }}>ℹ</span>
+          <span><strong>2028 Budget Input</strong> — Enter January–March 2028 items here.
+          {items.length === 0 ? ' Admins can seed this from Q1 2027 data using the Admin tab.' : ` ${items.length} item${items.length !== 1 ? 's' : ''} entered so far.`}</span>
+        </div>
+
+        {displayAccts.length === 0 && (
+          <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-400 text-sm">
+            No GL accounts found. The 2028 budget uses the same GL structure as 2027.
+          </div>
+        )}
+
+        {displayAccts.length > 0 && <div className="overflow-x-auto"><div className="min-w-[680px]">
+          {/* Simple month header for Q1 */}
+          <div className="hidden lg:grid text-xs font-bold uppercase tracking-widest text-gray-400 px-4"
+            style={{ gridTemplateColumns: '280px repeat(3, 100px) 120px 52px' }}>
+            <span>GL / Description</span>
+            {['Jan', 'Feb', 'Mar'].map(m => <span key={m} className="text-right">{m} 2028</span>)}
+            <span className="text-right">Total</span>
+            <span></span>
+          </div>
+
+          {displayAccts.map(acct => {
+            const acctItems = items.filter(i => i.account_code === acct.account_code)
+            const rowTotal = acctItems.reduce((s, i) => s + i.amount, 0)
+            const isExpanded2028 = expandedAccounts.has(`2028-${acct.account_code}`)
+
+            return (
+              <div key={acct.account_code} className="bg-white rounded-lg border shadow-sm overflow-hidden mb-2"
+                style={{ borderColor: isExpanded2028 ? '#316c7f' : '#e5e7eb' }}>
+
+                {/* Row */}
+                <button onClick={() => setExpandedAccounts(prev => {
+                  const next = new Set(prev)
+                  const key = `2028-${acct.account_code}`
+                  if (next.has(key)) next.delete(key); else next.add(key)
+                  return next
+                })}
+                  className="w-full text-left px-4 py-3 hidden lg:grid items-center transition-colors hover:bg-blue-50/40"
+                  style={{ gridTemplateColumns: '280px repeat(3, 100px) 120px 52px', background: isExpanded2028 ? 'rgba(49,108,127,.05)' : 'white' }}>
+                  <span className="flex items-center gap-2 min-w-0">
+                    <span className="font-mono text-xs font-semibold text-gray-400 whitespace-nowrap flex-shrink-0">{acct.account_code}</span>
+                    <span className="font-semibold text-gray-800 text-sm truncate">{acct.description}</span>
+                  </span>
+                  {[1, 2, 3].map(month => {
+                    const t = acctItems.filter(i => i.month === month).reduce((s, i) => s + i.amount, 0)
+                    return (
+                      <span key={month} className="text-right text-xs"
+                        style={{ color: t > 0 ? '#316c7f' : '#d1d5db', fontVariantNumeric: 'tabular-nums' }}>
+                        {t > 0 ? t.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}
+                      </span>
+                    )
+                  })}
+                  <span className="text-right font-bold text-sm whitespace-nowrap"
+                    style={{ color: rowTotal > 0 ? '#1e4757' : '#9ca3af', fontVariantNumeric: 'tabular-nums' }}>
+                    {rowTotal > 0 ? rowTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}
+                  </span>
+                  <span className="flex items-center justify-end gap-1.5">
+                    {acctItems.length > 0 && (
+                      <span className="text-xs font-bold px-1.5 py-0.5 rounded-full"
+                        style={{ background: 'rgba(49,108,127,.12)', color: '#316c7f' }}>{acctItems.length}</span>
+                    )}
+                    <svg className="flex-shrink-0 transition-transform"
+                      style={{ transform: isExpanded2028 ? 'rotate(180deg)' : 'rotate(0deg)' }}
+                      width="16" height="16" viewBox="0 0 16 16" fill="none">
+                      <path d="M4 6l4 4 4-4" stroke="#9ca3af" strokeWidth="1.5" strokeLinecap="round"/>
+                    </svg>
+                  </span>
+                </button>
+                {/* Mobile fallback */}
+                <button onClick={() => setExpandedAccounts(prev => {
+                  const next = new Set(prev)
+                  const key = `2028-${acct.account_code}`
+                  if (next.has(key)) next.delete(key); else next.add(key)
+                  return next
+                })}
+                  className="w-full text-left px-4 py-3 lg:hidden flex items-center gap-2 hover:bg-blue-50/40"
+                  style={{ background: isExpanded2028 ? 'rgba(49,108,127,.05)' : 'white' }}>
+                  <span className="font-mono text-xs font-semibold text-gray-400 whitespace-nowrap">{acct.account_code}</span>
+                  <span className="font-semibold text-gray-800 text-sm truncate flex-1">{acct.description}</span>
+                  <span className="font-bold text-sm whitespace-nowrap ml-auto"
+                    style={{ color: rowTotal > 0 ? '#1e4757' : '#9ca3af', fontVariantNumeric: 'tabular-nums' }}>
+                    {rowTotal > 0 ? rowTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}
+                  </span>
+                </button>
+
+                {isExpanded2028 && (
+                  <div style={{ borderTop: '1px solid rgba(49,108,127,.15)' }}>
+                    {/* Existing items */}
+                    {acctItems.length > 0 && (
+                      <table className="min-w-full text-sm">
+                        <thead>
+                          <tr style={{ background: '#f8fafb' }}>
+                            {['Description', 'Month', 'Amount', 'Notes', ''].map(h => (
+                              <th key={h} className="text-left px-3 py-2 text-xs font-bold uppercase tracking-wider whitespace-nowrap"
+                                style={{ color: '#316c7f' }}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {acctItems.map((item, idx) => (
+                            <tr key={item.id} className="border-t border-gray-100"
+                              style={{ background: idx % 2 === 0 ? '#fff' : 'rgba(0,0,0,.015)' }}>
+                              <td className="px-3 py-2 text-gray-800 font-medium max-w-[200px] truncate">{item.description}</td>
+                              <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{MONTH_NAMES[item.month - 1]} 2028</td>
+                              <td className="px-3 py-2 text-right font-semibold whitespace-nowrap"
+                                style={{ color: '#316c7f', fontVariantNumeric: 'tabular-nums' }}>
+                                ${item.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </td>
+                              <td className="px-3 py-2 text-gray-500 max-w-[140px] truncate">{item.notes || '—'}</td>
+                              <td className="px-3 py-2">
+                                <button onClick={() => handle2028Delete(item)}
+                                  className="text-gray-300 hover:text-red-500 transition-colors" title="Delete">
+                                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                                    <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                                  </svg>
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+
+                    {/* Add form */}
+                    <AddForm2028 acctCode={acct.account_code} onSave={handle2028Add} />
+                  </div>
+                )}
+              </div>
+            )
+          })}
+
+          {/* Grand total */}
+          <div className="bg-white rounded-lg border-2 shadow-sm px-4 py-3 flex items-center justify-between"
+            style={{ borderColor: 'rgba(49,108,127,.25)', background: 'rgba(49,108,127,.04)' }}>
+            <span className="font-extrabold text-sm" style={{ color: '#1e4757' }}>Total — {deptLabel} · 2028 Q1</span>
+            <span className="font-extrabold text-base" style={{ color: '#316c7f', fontVariantNumeric: 'tabular-nums' }}>
+              ${grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+          </div>
+        </div></div>}
+      </div>
+    )
+  }
+
+  async function handleCopyQ1To2028() {
+    setCopyingQ1(true)
+    setCopy2028Msg('')
+    try {
+      // Fetch all Q1 (months 1-3) items from 2027 for all departments
+      const { data: q1Items, error: fetchErr } = await supabase
+        .from('budget_line_items')
+        .select('account_code, description, employee_name, vendor, notes, month, amount, dept_code')
+        .eq('scenario_id', SCENARIOS.DIRECTOR_2027)
+        .in('month', [1, 2, 3])
+      if (fetchErr) { setCopy2028Msg(`Error: ${fetchErr.message}`); setCopyingQ1(false); return }
+      if (!q1Items || q1Items.length === 0) {
+        setCopy2028Msg('No Q1 2027 items found to copy.')
+        setCopyingQ1(false); return
+      }
+      // Check which already exist in 2028 to avoid duplicates
+      const { data: existing } = await supabase
+        .from('budget_line_items')
+        .select('id')
+        .eq('scenario_id', SCENARIOS.DIRECTOR_2028)
+      if (existing && existing.length > 0) {
+        setCopy2028Msg(`2028 already has ${existing.length} item(s). Clear them first if you want a fresh seed.`)
+        setCopyingQ1(false); return
+      }
+      // Insert copies with status=draft
+      const payloads = q1Items.map(i => ({
+        scenario_id: SCENARIOS.DIRECTOR_2028,
+        dept_code: i.dept_code,
+        account_code: i.account_code,
+        description: i.description,
+        employee_name: i.employee_name,
+        vendor: i.vendor,
+        notes: i.notes,
+        month: i.month,
+        amount: i.amount,
+        status: 'draft',
+      }))
+      const { error: insertErr } = await supabase.from('budget_line_items').insert(payloads)
+      if (insertErr) { setCopy2028Msg(`Insert error: ${insertErr.message}`); setCopyingQ1(false); return }
+      setCopy2028Msg(`✓ Copied ${payloads.length} Q1 items (Jan–Mar) from 2027 to 2028 across all departments.`)
+      // Refresh 2028 items for current dept
+      const { data: fresh } = await supabase
+        .from('budget_line_items').select(LINE_SELECT)
+        .eq('scenario_id', SCENARIOS.DIRECTOR_2028).eq('dept_code', activeDept)
+        .order('account_code').order('created_at')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const cast2028 = (r: any): LineItem => ({
+        id: r.id, account_code: r.account_code, description: r.description,
+        employee_name: r.employee_name, vendor: r.vendor, notes: r.notes,
+        month: Number(r.month), amount: Number(r.amount),
+        status: (r.status ?? 'draft') as LineItem['status'],
+        submitted_at: r.submitted_at, approved_by_jeremiah: Boolean(r.approved_by_jeremiah),
+        jeremiah_approved_at: r.jeremiah_approved_at, approved_by_joseph: Boolean(r.approved_by_joseph),
+        joseph_approved_at: r.joseph_approved_at, return_comment: r.return_comment,
+      })
+      setLineItems2028((fresh ?? []).map(cast2028))
+    } catch (e) {
+      setCopy2028Msg(`Unexpected error: ${String(e)}`)
+    }
+    setCopyingQ1(false)
+  }
+
   function renderAdminPanel() {
     const allDeptCodes = Object.keys(deptNames)
     return (
@@ -1312,6 +1714,31 @@ export default function DashboardPage() {
               )
             })}
           </div>
+        </div>
+
+        {/* ── 2028 Q1 Seed ── */}
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h3 className="font-extrabold text-sm uppercase tracking-widest" style={{ color: '#1e4757' }}>
+                Seed 2028 Q1 Budget
+              </h3>
+              <p className="text-xs text-gray-500 mt-1">
+                Copies all Jan–Mar 2027 expense items (all departments) into the 2028 budget as drafts.
+                Directors can then delete items that no longer apply. Only works once — blocked if 2028 already has data.
+              </p>
+            </div>
+            <button onClick={handleCopyQ1To2028} disabled={copyingQ1}
+              className="btn-primary text-xs px-4 py-2 whitespace-nowrap flex-shrink-0 ml-4">
+              {copyingQ1 ? 'Copying…' : '📋 Copy Q1 2027 → 2028'}
+            </button>
+          </div>
+          {copy2028Msg && (
+            <div className="text-sm font-semibold px-3 py-2 rounded"
+              style={{ background: copy2028Msg.startsWith('✓') ? '#d1fae5' : '#fee2e2', color: copy2028Msg.startsWith('✓') ? '#065f46' : '#991b1b' }}>
+              {copy2028Msg}
+            </div>
+          )}
         </div>
 
         {/* ── Pending approvals ── */}
@@ -1616,9 +2043,10 @@ export default function DashboardPage() {
   const totalPendingAdmin = pendingItems.length + pendingHires.length + pendingCerts.length
 
   const tabs = [
-    { key: 'input'   as const, label: '2027 Budget Input' },
-    { key: 'ref2026' as const, label: '2026 Approved' },
-    { key: 'ref2025' as const, label: '2025 Approved' },
+    { key: 'input'     as const, label: '2027 Budget Input' },
+    { key: 'input2028' as const, label: '2028 Budget Input' },
+    { key: 'ref2026'   as const, label: '2026 Approved' },
+    { key: 'ref2025'   as const, label: '2025 Approved' },
     ...(isAdmin ? [{ key: 'admin' as const, label: '⚙ Admin' }] : []),
   ]
 
@@ -1733,6 +2161,8 @@ export default function DashboardPage() {
         : activeTab === 'ref2026' ? renderRefAccordion(ref2026Items, expandedRef2026, toggleRef2026, '2026')
 
         : activeTab === 'ref2025' ? renderRefAccordion(ref2025Items, expandedRef2025, toggleRef2025, '2025')
+
+        : activeTab === 'input2028' ? render2028Input()
 
         : (
           /* ── Input Tab ──────────────────────────────────────────────────── */
