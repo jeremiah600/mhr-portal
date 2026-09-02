@@ -58,7 +58,7 @@ const LINE_SELECT = [
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmt(n: number) {
-  return n === 0 ? '—' : n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+  return n === 0 ? '—' : n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 function itemMonthTotal(items: LineItem[], account_code: string, month: number): number {
@@ -253,7 +253,7 @@ export default function DashboardPage() {
       employee_name: r.employee_name as string,
       vendor: r.vendor as string,
       notes: r.notes as string,
-      month: r.month as number,
+      month: Number(r.month),
       amount: Number(r.amount),
       status: (r.status as LineItem['status']) ?? 'draft',
       submitted_at: r.submitted_at as string | null,
@@ -320,7 +320,7 @@ export default function DashboardPage() {
       employee_name: r.employee_name as string,
       vendor: r.vendor as string,
       notes: r.notes as string,
-      month: r.month as number,
+      month: Number(r.month),
       amount: Number(r.amount),
       status: 'submitted' as const,
       submitted_at: r.submitted_at as string | null,
@@ -438,7 +438,7 @@ export default function DashboardPage() {
       else if (data) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const cast = (data as any[]).map((r: any) => ({
-          ...r, amount: Number(r.amount), status: 'draft' as const,
+          ...r, month: Number(r.month), amount: Number(r.amount), status: 'draft' as const,
           approved_by_jeremiah: false, approved_by_joseph: false,
           submitted_at: null, jeremiah_approved_at: null, joseph_approved_at: null, return_comment: null,
         }))
@@ -459,7 +459,7 @@ export default function DashboardPage() {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const d = data as any
         const item = {
-          ...d as LineItem, amount: Number(d.amount), status: 'draft' as const,
+          ...d as LineItem, month: Number(d.month), amount: Number(d.amount), status: 'draft' as const,
           approved_by_jeremiah: false, approved_by_joseph: false,
           submitted_at: null, jeremiah_approved_at: null, joseph_approved_at: null, return_comment: null,
         }
@@ -705,7 +705,7 @@ export default function DashboardPage() {
                     return (
                       <span key={month} className="text-right text-xs w-[72px] flex-shrink-0"
                         style={{ color: t > 0 ? '#316c7f' : '#d1d5db', fontVariantNumeric: 'tabular-nums' }}>
-                        {t > 0 ? t.toLocaleString('en-US', { maximumFractionDigits: 0 }) : '—'}
+                        {t > 0 ? t.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}
                       </span>
                     )
                   })}
@@ -1130,14 +1130,14 @@ export default function DashboardPage() {
                         return (
                           <span key={month} className="text-right text-xs w-[72px] flex-shrink-0"
                             style={{ color: t > 0 ? '#316c7f' : '#d1d5db', fontVariantNumeric: 'tabular-nums' }}>
-                            {t > 0 ? t.toLocaleString('en-US', { maximumFractionDigits: 0 }) : '—'}
+                            {t > 0 ? t.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}
                           </span>
                         )
                       })}
                     </span>
                     <span className="ml-auto font-bold text-sm w-24 text-right flex-shrink-0"
                       style={{ color: rowTotal > 0 ? '#1e4757' : '#9ca3af', fontVariantNumeric: 'tabular-nums' }}>
-                      {rowTotal > 0 ? rowTotal.toLocaleString('en-US', { maximumFractionDigits: 0 }) : '—'}
+                      {rowTotal > 0 ? rowTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}
                     </span>
                     {acctItems.length > 0 && (
                       <span className="flex-shrink-0 text-xs font-bold px-1.5 py-0.5 rounded-full ml-2"
