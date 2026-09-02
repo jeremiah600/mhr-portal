@@ -805,21 +805,29 @@ export default function DashboardPage() {
                     <div className="font-semibold text-sm text-gray-800">{deptNames[code]}</div>
                     <div className="text-xs text-gray-400 font-mono">{code}</div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold px-2 py-0.5 rounded-full"
-                      style={{ background: isOpen ? '#d1fae5' : '#f3f4f6', color: isOpen ? '#065f46' : '#9ca3af' }}>
-                      {isOpen ? 'Open' : 'Closed'}
-                    </span>
+                  <div className="flex items-center gap-1 rounded-full p-0.5"
+                    style={{ background: '#f1f5f9' }}>
                     <button
-                      onClick={() => handleToggleWindow(code, !isOpen)}
+                      onClick={() => !isOpen && !busy && handleToggleWindow(code, true)}
                       disabled={busy}
-                      className="text-xs font-semibold px-2.5 py-1 rounded transition-colors"
+                      className="text-xs font-bold px-3 py-1 rounded-full transition-all"
                       style={{
-                        background: isOpen ? '#fee2e2' : '#d1fae5',
-                        color: isOpen ? '#991b1b' : '#065f46',
-                        opacity: busy ? 0.5 : 1,
+                        background: isOpen ? '#d1fae5' : 'transparent',
+                        color: isOpen ? '#065f46' : '#9ca3af',
+                        cursor: isOpen ? 'default' : 'pointer',
                       }}>
-                      {busy ? '…' : isOpen ? 'Close' : 'Open'}
+                      {busy && !isOpen ? '…' : 'Open'}
+                    </button>
+                    <button
+                      onClick={() => isOpen && !busy && handleToggleWindow(code, false)}
+                      disabled={busy}
+                      className="text-xs font-bold px-3 py-1 rounded-full transition-all"
+                      style={{
+                        background: !isOpen ? '#fee2e2' : 'transparent',
+                        color: !isOpen ? '#991b1b' : '#9ca3af',
+                        cursor: !isOpen ? 'default' : 'pointer',
+                      }}>
+                      {busy && isOpen ? '…' : 'Closed'}
                     </button>
                   </div>
                 </div>
