@@ -1359,8 +1359,10 @@ export default function DashboardPage() {
   }
 
   async function handleMktDelete(id: string) {
-    await supabase.from('marketing_budget_items').delete().eq('id', id)
+    const { error } = await supabase.from('marketing_budget_items').delete().eq('id', id)
+    if (error) { setActionMsg('Error deleting: ' + error.message); return }
     await loadMarketingData()
+    setActionMsg('✓ Item deleted')
   }
 
   async function handleMktSubmitAll() {
