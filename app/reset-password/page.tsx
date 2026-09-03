@@ -40,12 +40,27 @@ function ResetPasswordForm() {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    const code = searchParams.get('code')
-    if (!code) { setError('No reset code found. Please request a new link.'); setStatus('error'); return }
-    createClient().auth.exchangeCodeForSession(code).then(({ error }) => {
-      if (error) { setError('This reset link has expired or already been used.'); setStatus('error') }
-      else { setStatus('idle') }
-    })
+    const supabase = createClient()
+    const code       = searchParams.get('code')
+    const tokenHash  = searchParams.get('token_hash')
+    const type       = searchParams.get('type')
+
+    if (code) {
+      // PKCE flow
+      supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
+        if (error) { setError('This reset link has expired or already been used.'); setStatus('error') }
+        else { setStatus('idle') }
+      })
+    } else if (tokenHash && type) {
+      // Email OTP / token_hash flow
+      supabase.auth.verifyOtp({ token_hash: tokenHash, type: type as 'recovery' }).then(({ error }) => {
+        if (error) { setError('This reset link has expired or already been used.'); setStatus('error') }
+        else { setStatus('idle') }
+      })
+    } else {
+      setError('No reset code found. Please request a new link.')
+      setStatus('error')
+    }
   }, [searchParams])
 
   async function handleReset(e: React.FormEvent) {
