@@ -239,7 +239,7 @@ export default function DashboardPage() {
   const [userEmail, setUserEmail] = useState('')
   const [userId, setUserId] = useState('')
   const [activeDept, setActiveDept] = useState<string>('')
-  const [activeTab, setActiveTab] = useState<'input' | 'ref2026' | 'ref2025' | 'admin' | 'marketing'>('input')
+  const [activeTab, setActiveTab] = useState<'input' | 'ref2026' | 'ref2025' | 'admin'>('input')
 
   const [deptNames, setDeptNames] = useState<Record<string, string>>({})
   const [accounts, setAccounts] = useState<AccountMeta[]>([])
@@ -264,7 +264,7 @@ export default function DashboardPage() {
   const [addForm, setAddForm] = useState(emptyForm())
 
   // Sub-tab state inside 2027 Budget Input
-  const [activeSubTab, setActiveSubTab] = useState<'expenses' | 'hires' | 'certs'>('expenses')
+  const [activeSubTab, setActiveSubTab] = useState<'expenses' | 'hires' | 'certs' | 'marketing'>('expenses')
 
   // New hires
   const [newHires, setNewHires] = useState<NewHire[]>([])
@@ -297,7 +297,7 @@ export default function DashboardPage() {
   const [mktExpandedRef2025, setMktExpandedRef2025] = useState<Set<string>>(new Set())
   const [mktExpandedEntry, setMktExpandedEntry] = useState<Set<string>>(new Set())
   const [mktAddingTo, setMktAddingTo] = useState<string | null>(null)
-  const [mktAddForm, setMktAddForm] = useState({ description: '', month: 1, amount: '' })
+  const [mktAddForm, setMktAddForm] = useState({ description: '', entryType: 'once' as 'once' | 'recurring', month: 1, amount: '' })
   const [mktSaving, setMktSaving] = useState(false)
   const [mktSubmittingId, setMktSubmittingId] = useState<string | null>(null)
   const [mktApprovingId, setMktApprovingId] = useState<string | null>(null)
@@ -549,12 +549,10 @@ export default function DashboardPage() {
   }, [supabase])
 
   useEffect(() => {
-    const isSales = profile?.dept_code === '800'
-    const isAdminUser = profile?.role === 'admin'
-    if ((isSales || isAdminUser) && activeTab === 'marketing') {
+    if (profile?.dept_code === '800') {
       loadMarketingData()
     }
-  }, [activeTab, profile, loadMarketingData])
+  }, [profile, loadMarketingData])
 
   // ── Load pending items for admin ───────────────────────────────────────────
 
@@ -1342,20 +1340,21 @@ export default function DashboardPage() {
       return
     }
     setMktSaving(true)
-    const { error } = await supabase.from('marketing_budget_items').insert({
-      category: catLabel,
-      category_code: catCode,
-      description: mktAddForm.description.trim(),
-      year: 2027,
-      month: mktAddForm.month,
-      amount: amt,
-      status: 'draft',
-    })
+    const rows = mktAddForm.entryType === 'recurring'
+      ? Array.from({ length: 12 }, (_, i) => ({
+          category: catLabel, category_code: catCode,
+          description: mktAddForm.description.trim(),
+          year: 2027, month: i + 1, amount: amt, status: 'draft',
+        }))
+      : [{ category: catLabel, category_code: catCode,
+          description: mktAddForm.description.trim(),
+          year: 2027, month: mktAddForm.month, amount: amt, status: 'draft' }]
+    const { error } = await supabase.from('marketing_budget_items').insert(rows)
     if (error) { setActionMsg('Error saving: ' + error.message); setMktSaving(false); return }
-    setMktAddForm({ description: '', month: 1, amount: '' })
+    setMktAddForm({ description: '', entryType: 'once', month: 1, amount: '' })
     setMktAddingTo(null)
     await loadMarketingData()
-    setActionMsg('✓ Saved')
+    setActionMsg(`✓ Saved${mktAddForm.entryType === 'recurring' ? ' (12 months)' : ''}`)
     setMktSaving(false)
   }
 
@@ -1495,39 +1494,7 @@ export default function DashboardPage() {
   function renderMarketingBudget() {
     const mktDraftCount = mktItems.filter(i => i.status === 'draft' || i.status === 'returned').length
     return (
-      <div className="space-y-4">
-        {/* Sub-tabs */}
-        <div className="flex gap-1" style={{ borderBottom: '1px solid #e5e7eb' }}>
-          {([
-            { key: 'entry'   as const, label: '2027 Entry', count: mktDraftCount },
-            { key: 'ref2026' as const, label: '2026 Reference', count: 0 },
-            { key: 'ref2025' as const, label: '2025 Reference', count: 0 },
-          ]).map(st => (
-            <button key={st.key} onClick={() => setMktActiveSubTab(st.key)}
-              className="relative px-4 py-2 text-sm font-semibold transition-colors"
-              style={{
-                marginBottom: '-1px',
-                color: mktActiveSubTab === st.key ? '#316c7f' : '#9ca3af',
-                background: 'transparent', border: 'none',
-                borderBottom: `2px solid ${mktActiveSubTab === st.key ? '#316c7f' : 'transparent'}`,
-                cursor: 'pointer',
-              }}>
-              {st.label}
-              {st.count > 0 && (
-                <span className="ml-1.5 text-xs font-bold px-1.5 py-0.5 rounded-full"
-                  style={{ background: 'rgba(49,108,127,.12)', color: '#316c7f' }}>{st.count}</span>
-              )}
-            </button>
-          ))}
-        </div>
-
-        {/* 2026 / 2025 reference tabs */}
-        {mktActiveSubTab === 'ref2026' && renderMktRefAccordion(mktRef2026, mktExpandedRef2026, (c) => setMktExpandedRef2026(prev => { const s = new Set(prev); s.has(c) ? s.delete(c) : s.add(c); return s }), '2026')}
-        {mktActiveSubTab === 'ref2025' && renderMktRefAccordion(mktRef2025, mktExpandedRef2025, (c) => setMktExpandedRef2025(prev => { const s = new Set(prev); s.has(c) ? s.delete(c) : s.add(c); return s }), '2025')}
-
-        {/* 2027 entry tab */}
-        {mktActiveSubTab === 'entry' && (
-          <div className="space-y-3">
+      <div className="space-y-3">
 
             {/* Submit bar */}
             {windowOpen && mktDraftCount > 0 && (
@@ -1656,15 +1623,36 @@ export default function DashboardPage() {
                                   onChange={e => setMktAddForm(p => ({ ...p, description: e.target.value }))} />
                               </div>
                               <div>
-                                <label className="text-xs font-bold text-gray-500 block mb-1">Month</label>
-                                <select className="input-field text-sm"
-                                  value={mktAddForm.month}
-                                  onChange={e => setMktAddForm(p => ({ ...p, month: Number(e.target.value) }))}>
-                                  {MONTH_NAMES.map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
-                                </select>
+                                <label className="text-xs font-bold text-gray-500 block mb-1">Frequency</label>
+                                <div className="flex rounded overflow-hidden border border-gray-300">
+                                  {(['once', 'recurring'] as const).map(t => (
+                                    <button key={t} type="button"
+                                      onClick={() => setMktAddForm(p => ({ ...p, entryType: t }))}
+                                      className="px-3 py-1.5 text-xs font-semibold transition-colors"
+                                      style={{
+                                        background: mktAddForm.entryType === t ? '#316c7f' : '#fff',
+                                        color: mktAddForm.entryType === t ? '#fff' : '#6b7280',
+                                        border: 'none', cursor: 'pointer',
+                                      }}>
+                                      {t === 'once' ? 'One-time' : 'Monthly (all 12)'}
+                                    </button>
+                                  ))}
+                                </div>
                               </div>
+                              {mktAddForm.entryType === 'once' && (
+                                <div>
+                                  <label className="text-xs font-bold text-gray-500 block mb-1">Month</label>
+                                  <select className="input-field text-sm"
+                                    value={mktAddForm.month}
+                                    onChange={e => setMktAddForm(p => ({ ...p, month: Number(e.target.value) }))}>
+                                    {MONTH_NAMES.map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
+                                  </select>
+                                </div>
+                              )}
                               <div>
-                                <label className="text-xs font-bold text-gray-500 block mb-1">Amount ($)</label>
+                                <label className="text-xs font-bold text-gray-500 block mb-1">
+                                  Amount ($){mktAddForm.entryType === 'recurring' && <span className="font-normal text-gray-400"> per month</span>}
+                                </label>
                                 <input className="input-field w-28 text-sm" type="number" min="0" step="0.01"
                                   placeholder="0.00"
                                   value={mktAddForm.amount}
@@ -1672,12 +1660,12 @@ export default function DashboardPage() {
                               </div>
                               <button onClick={() => handleMktSave(cat.code, cat.label)} disabled={mktSaving}
                                 className="btn-primary text-sm px-4 py-2">{mktSaving ? 'Saving…' : 'Save'}</button>
-                              <button onClick={() => { setMktAddingTo(null); setMktAddForm({ description: '', month: 1, amount: '' }) }}
+                              <button onClick={() => { setMktAddingTo(null); setMktAddForm({ description: '', entryType: 'once', month: 1, amount: '' }) }}
                                 className="text-sm text-gray-400 hover:text-gray-700"
                                 style={{ background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
                             </div>
                           ) : (
-                            <button onClick={() => { setMktAddingTo(cat.code); setMktAddForm({ description: '', month: 1, amount: '' }) }}
+                            <button onClick={() => { setMktAddingTo(cat.code); setMktAddForm({ description: '', entryType: 'once', month: 1, amount: '' }) }}
                               className="text-sm font-semibold transition-colors"
                               style={{ color: '#316c7f', background: 'none', border: 'none', cursor: 'pointer' }}>
                               + Add line item
@@ -1701,8 +1689,6 @@ export default function DashboardPage() {
                 </span>
               </div>
             )}
-          </div>
-        )}
       </div>
     )
   }
@@ -2075,12 +2061,11 @@ export default function DashboardPage() {
   const draftCount = expDraftCount + hireDraftCount + certDraftCount
   const totalPendingAdmin = pendingItems.length + pendingHires.length + pendingCerts.length
 
-  const showMarketing = isAdmin || profile.dept_code === '800'
+  const isSalesDept = profile.dept_code === '800'
   const tabs = [
     { key: 'input'   as const, label: '2027 Budget Input' },
     { key: 'ref2026' as const, label: '2026 Approved' },
     { key: 'ref2025' as const, label: '2025 Approved' },
-    ...(showMarketing ? [{ key: 'marketing' as const, label: '📣 Marketing Budget' }] : []),
     ...(isAdmin ? [{ key: 'admin' as const, label: '⚙ Admin' }] : []),
   ]
 
@@ -2192,8 +2177,6 @@ export default function DashboardPage() {
 
         ) : activeTab === 'admin' ? renderAdminPanel()
 
-        : activeTab === 'marketing' ? renderMarketingBudget()
-
         : activeTab === 'ref2026' ? renderRefAccordion(ref2026Items, expandedRef2026, toggleRef2026, '2026')
 
         : activeTab === 'ref2025' ? renderRefAccordion(ref2025Items, expandedRef2025, toggleRef2025, '2025')
@@ -2230,7 +2213,8 @@ export default function DashboardPage() {
                 { key: 'expenses' as const, label: 'Expenses', count: expDraftCount },
                 { key: 'hires'    as const, label: 'New Hires', count: hireDraftCount },
                 { key: 'certs'    as const, label: 'Certifications', count: certDraftCount },
-              ]).map(st => (
+                ...(isSalesDept ? [{ key: 'marketing' as const, label: '📣 Marketing', count: mktItems.filter(i => i.status === 'draft' || i.status === 'returned').length }] : []),
+              ] as Array<{ key: typeof activeSubTab | 'marketing', label: string, count: number }>).map(st => (
                 <button key={st.key} onClick={() => setActiveSubTab(st.key)}
                   className="relative px-4 py-2 text-sm font-semibold transition-colors"
                   style={{
@@ -2909,6 +2893,9 @@ export default function DashboardPage() {
                 )}
               </div>
             )}
+
+            {/* ── Marketing sub-tab (Sales dept 800 only) ─────────────────── */}
+            {activeSubTab === 'marketing' && isSalesDept && renderMarketingBudget()}
 
           </div>
         )}
