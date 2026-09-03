@@ -1496,6 +1496,37 @@ export default function DashboardPage() {
     return (
       <div className="space-y-3">
 
+        {/* Internal sub-tabs: 2027 entry | 2026 ref | 2025 ref */}
+        <div className="flex gap-1" style={{ borderBottom: '1px solid #e5e7eb' }}>
+          {([
+            { key: 'entry'   as const, label: '2027 Entry', count: mktDraftCount },
+            { key: 'ref2026' as const, label: '2026 Reference', count: 0 },
+            { key: 'ref2025' as const, label: '2025 Reference', count: 0 },
+          ]).map(st => (
+            <button key={st.key} onClick={() => setMktActiveSubTab(st.key)}
+              className="relative px-4 py-2 text-sm font-semibold transition-colors"
+              style={{
+                marginBottom: '-1px',
+                color: mktActiveSubTab === st.key ? '#316c7f' : '#9ca3af',
+                background: 'transparent', border: 'none',
+                borderBottom: `2px solid ${mktActiveSubTab === st.key ? '#316c7f' : 'transparent'}`,
+                cursor: 'pointer',
+              }}>
+              {st.label}
+              {st.count > 0 && (
+                <span className="ml-1.5 text-xs font-bold px-1.5 py-0.5 rounded-full"
+                  style={{ background: 'rgba(49,108,127,.12)', color: '#316c7f' }}>{st.count}</span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* 2026 / 2025 reference */}
+        {mktActiveSubTab === 'ref2026' && renderMktRefAccordion(mktRef2026, mktExpandedRef2026, (c) => setMktExpandedRef2026(prev => { const s = new Set(prev); s.has(c) ? s.delete(c) : s.add(c); return s }), '2026')}
+        {mktActiveSubTab === 'ref2025' && renderMktRefAccordion(mktRef2025, mktExpandedRef2025, (c) => setMktExpandedRef2025(prev => { const s = new Set(prev); s.has(c) ? s.delete(c) : s.add(c); return s }), '2025')}
+
+        {mktActiveSubTab === 'entry' && <div className="space-y-3">
+
             {/* Submit bar */}
             {windowOpen && mktDraftCount > 0 && (
               <div className="bg-white rounded-lg border px-4 py-3 flex items-center justify-between shadow-sm"
@@ -1536,6 +1567,17 @@ export default function DashboardPage() {
                       <span className="text-xs font-bold px-1.5 py-0.5 rounded-full"
                         style={{ background: 'rgba(251,191,36,.2)', color: '#92400e' }}>{draftItems.length} draft</span>
                     )}
+                    <span className="hidden lg:flex items-center gap-0">
+                      {Array.from({ length: 12 }, (_, i) => i + 1).map(month => {
+                        const t = mktCategoryTotal(catItems, cat.code, month)
+                        return (
+                          <span key={month} className="text-right text-xs w-[68px] flex-shrink-0"
+                            style={{ color: t > 0 ? '#316c7f' : '#d1d5db', fontVariantNumeric: 'tabular-nums' }}>
+                            {t > 0 ? t.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}
+                          </span>
+                        )
+                      })}
+                    </span>
                     <span className="font-bold text-sm w-28 text-right flex-shrink-0"
                       style={{ color: '#1e4757', fontVariantNumeric: 'tabular-nums' }}>{catTotal > 0 ? `$${catTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}</span>
                     <svg className="flex-shrink-0 ml-2 transition-transform"
@@ -1689,6 +1731,7 @@ export default function DashboardPage() {
                 </span>
               </div>
             )}
+        </div>}
       </div>
     )
   }
