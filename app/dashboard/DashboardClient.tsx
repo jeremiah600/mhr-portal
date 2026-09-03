@@ -436,24 +436,23 @@ export default function DashboardPage() {
 
     const allCodes = [...new Set([...items2025, ...items2026, ...items2027].map(i => i.account_code))].sort()
     let glDesc: Record<string, string> = {}
-
-    // Load GL accounts directly for this department (covers depts with no historical line items)
-    const { data: deptGlRows } = await supabase
-      .from('gl_accounts').select('account_code, description').like('account_code', `%-${dept}`)
-    for (const gl of deptGlRows ?? []) glDesc[gl.account_code] = gl.description
-
-    // Also load descriptions for any codes found in historical line items
-    const missingCodes = allCodes.filter(c => !glDesc[c])
-    if (missingCodes.length > 0) {
+    if (allCodes.length > 0) {
       const { data: glRows } = await supabase
-        .from('gl_accounts').select('account_code, description').in('account_code', missingCodes)
+        .from('gl_accounts').select('account_code, description').in('account_code', allCodes)
       for (const gl of glRows ?? []) glDesc[gl.account_code] = gl.description
     }
 
-    // Build account list: dept GL accounts first, then any historical codes not already included
-    const deptGlCodes = (deptGlRows ?? []).map(r => r.account_code).sort()
-    const allAccountCodes = [...new Set([...deptGlCodes, ...allCodes])].sort()
-    const accts: AccountMeta[] = allAccountCodes.map(code => ({
+    // Use 2026 codes as the primary account list (approved reference year).
+    // Fall back to 2025 codes if the dept has no 2026 data, then any 2027 drafts.
+    const codes2026 = [...new Set(items2026.map(i => i.account_code))].sort()
+    const codes2025 = [...new Set(items2025.map(i => i.account_code))].sort()
+    const codes2027 = [...new Set(items2027.map(i => i.account_code))].sort()
+    const baseCodes = codes2026.length > 0 ? codes2026
+                    : codes2025.length > 0 ? codes2025
+                    : codes2027
+    // Always include any 2027 draft codes even if they aren't in the base list
+    const acctCodes = [...new Set([...baseCodes, ...codes2027])].sort()
+    const accts: AccountMeta[] = acctCodes.map(code => ({
       account_code: code,
       description: glDesc[code] ?? code,
     }))
@@ -2334,7 +2333,7 @@ export default function DashboardPage() {
             {activeSubTab === 'expenses' && (<>
             {accounts.length === 0 && (
               <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-400 text-sm">
-                No GL accounts found for this department. An admin may need to add accounts to the <code className="text-xs bg-gray-100 px-1 rounded">gl_accounts</code> table for dept code <strong>{activeDept}</strong>.
+                No budget expense lines found for this department. Switch to New Hires or Certifications to add other budget items.
               </div>
             )}
             {accounts.length > 0 && <div className="overflow-x-auto">
