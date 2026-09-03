@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient, SCENARIOS } from '@/lib/supabase'
 
@@ -95,6 +95,23 @@ interface StatusFields {
   return_comment: string | null
 }
 
+interface MarketingBudgetItem {
+  id: string
+  category: string
+  category_code: string
+  description: string
+  year: number
+  month: number
+  amount: number
+  status: 'draft' | 'submitted' | 'approved' | 'returned'
+  submitted_at: string | null
+  approved_by_jeremiah: boolean
+  jeremiah_approved_at: string | null
+  approved_by_joseph: boolean
+  joseph_approved_at: string | null
+  return_comment: string | null
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -142,14 +159,6 @@ function isPastMonth(month: number): boolean {
   return month < now.getMonth() + 1
 }
 
-/** All 2028 months are future (2028 hasn't started yet) */
-function isPastMonth2028(_month: number): boolean {
-  const now = new Date()
-  if (now.getFullYear() < 2028) return false
-  if (now.getFullYear() > 2028) return true
-  return _month < now.getMonth() + 1
-}
-
 const emptyForm = () => ({
   description: '',
   employee_name: '',
@@ -159,7 +168,6 @@ const emptyForm = () => ({
   month: 1,
   fromMonth: 1,
   toMonth: 12,
-  toYear: 2027,
   amount: '',
 })
 
@@ -221,104 +229,6 @@ function StatusBadge({ item }: { item: StatusFields }) {
   )
 }
 
-// ─── AddForm2028 ─────────────────────────────────────────────────────────────
-// Standalone sub-component so it keeps its own state between parent re-renders.
-
-function AddForm2028({
-  acctCode,
-  onSave,
-}: {
-  acctCode: string
-  onSave: (account_code: string, formData: ReturnType<typeof emptyForm>) => Promise<void>
-}) {
-  const [form, setForm] = useState(emptyForm)
-  const [saving, setSaving] = useState(false)
-
-  async function handleSubmit() {
-    if (!form.amount || Number(form.amount) <= 0) return
-    setSaving(true)
-    // Force months to Q1 range
-    const adjusted: ReturnType<typeof emptyForm> = {
-      ...form,
-      fromMonth: form.entryType === 'recurring' ? Math.max(1, Math.min(form.fromMonth, 3)) : form.fromMonth,
-      toMonth:   form.entryType === 'recurring' ? Math.max(1, Math.min(form.toMonth, 3))   : form.toMonth,
-      month:     form.entryType === 'once'      ? Math.max(1, Math.min(form.month, 3))     : form.month,
-    }
-    await onSave(acctCode, adjusted)
-    setForm(emptyForm())
-    setSaving(false)
-  }
-
-  const Q1 = [{ v: 1, l: 'Jan 2028' }, { v: 2, l: 'Feb 2028' }, { v: 3, l: 'Mar 2028' }]
-
-  const inputCls = "border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 w-full"
-  const inputStyle = { borderColor: '#e5e7eb' }
-  const focusStyle = { '--tw-ring-color': '#316c7f' } as React.CSSProperties
-
-  return (
-    <div className="px-4 py-3 border-t" style={{ borderColor: 'rgba(49,108,127,.1)', background: 'rgba(49,108,127,.02)' }}>
-      <p className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: '#316c7f' }}>Add 2028 Item</p>
-
-      {/* Entry type toggle */}
-      <div className="flex gap-1 mb-2">
-        {(['once', 'recurring'] as const).map(type => (
-          <button key={type} onClick={() => setForm(f => ({ ...f, entryType: type }))}
-            className="px-3 py-1 rounded text-xs font-semibold transition-colors"
-            style={{
-              background: form.entryType === type ? '#316c7f' : 'transparent',
-              color: form.entryType === type ? '#fff' : '#6b7280',
-              border: '1px solid',
-              borderColor: form.entryType === type ? '#316c7f' : '#e5e7eb',
-            }}>
-            {type === 'once' ? 'One-time' : 'Recurring'}
-          </button>
-        ))}
-      </div>
-
-      <div className="grid gap-2" style={{ gridTemplateColumns: '1fr 1fr' }}>
-        <input className={inputCls} style={{ ...inputStyle, ...focusStyle }} placeholder="Description"
-          value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
-        <input className={inputCls} style={{ ...inputStyle, ...focusStyle }} placeholder="Employee name"
-          value={form.employee_name} onChange={e => setForm(f => ({ ...f, employee_name: e.target.value }))} />
-        <input className={inputCls} style={{ ...inputStyle, ...focusStyle }} placeholder="Vendor"
-          value={form.vendor} onChange={e => setForm(f => ({ ...f, vendor: e.target.value }))} />
-        <input className={inputCls} style={{ ...inputStyle, ...focusStyle }} placeholder="Notes"
-          value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
-      </div>
-
-      <div className="flex flex-wrap gap-2 mt-2 items-end">
-        {form.entryType === 'once' && (
-          <select className={inputCls} style={{ ...inputStyle, width: 'auto' }}
-            value={form.month} onChange={e => setForm(f => ({ ...f, month: Number(e.target.value) }))}>
-            {Q1.map(({ v, l }) => <option key={v} value={v}>{l}</option>)}
-          </select>
-        )}
-        {form.entryType === 'recurring' && (
-          <>
-            <select className={inputCls} style={{ ...inputStyle, width: 'auto' }}
-              value={form.fromMonth} onChange={e => setForm(f => ({ ...f, fromMonth: Number(e.target.value) }))}>
-              {Q1.map(({ v, l }) => <option key={v} value={v}>{l}</option>)}
-            </select>
-            <span className="text-xs text-gray-400 self-center">to</span>
-            <select className={inputCls} style={{ ...inputStyle, width: 'auto' }}
-              value={form.toMonth} onChange={e => setForm(f => ({ ...f, toMonth: Number(e.target.value) }))}>
-              {Q1.map(({ v, l }) => <option key={v} value={v}>{l}</option>)}
-            </select>
-          </>
-        )}
-        <input className={inputCls} style={{ ...inputStyle, width: '120px', fontVariantNumeric: 'tabular-nums' }}
-          type="number" step="0.01" min="0" placeholder="Amount *"
-          value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} />
-        <button onClick={handleSubmit} disabled={saving || !form.amount || Number(form.amount) <= 0}
-          className="px-4 py-1.5 rounded text-sm font-semibold transition-opacity whitespace-nowrap"
-          style={{ background: '#316c7f', color: '#fff', opacity: saving || !form.amount ? 0.5 : 1, cursor: saving ? 'wait' : 'pointer' }}>
-          {saving ? 'Saving…' : '+ Add'}
-        </button>
-      </div>
-    </div>
-  )
-}
-
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
@@ -329,13 +239,12 @@ export default function DashboardPage() {
   const [userEmail, setUserEmail] = useState('')
   const [userId, setUserId] = useState('')
   const [activeDept, setActiveDept] = useState<string>('')
-  const [activeTab, setActiveTab] = useState<'input' | 'input2028' | 'ref2026' | 'ref2025' | 'admin'>('input')
+  const [activeTab, setActiveTab] = useState<'input' | 'ref2026' | 'ref2025' | 'admin' | 'marketing'>('input')
 
   const [deptNames, setDeptNames] = useState<Record<string, string>>({})
   const [accounts, setAccounts] = useState<AccountMeta[]>([])
   const [glDescriptions, setGlDescriptions] = useState<Record<string, string>>({})
   const [lineItems, setLineItems] = useState<LineItem[]>([])
-  const [lineItems2028, setLineItems2028] = useState<LineItem[]>([])
   const [ref2026Items, setRef2026Items] = useState<LineItem[]>([])
   const [ref2025Items, setRef2025Items] = useState<LineItem[]>([])
 
@@ -379,14 +288,28 @@ export default function DashboardPage() {
   const [certReturningId, setCertReturningId] = useState<string | null>(null)
   const [certReturnComment, setCertReturnComment] = useState<Record<string, string>>({})
 
+  // Marketing budget (Sales dept 800)
+  const [mktItems, setMktItems] = useState<MarketingBudgetItem[]>([])
+  const [mktRef2026, setMktRef2026] = useState<MarketingBudgetItem[]>([])
+  const [mktRef2025, setMktRef2025] = useState<MarketingBudgetItem[]>([])
+  const [mktActiveSubTab, setMktActiveSubTab] = useState<'entry' | 'ref2026' | 'ref2025'>('entry')
+  const [mktExpandedRef2026, setMktExpandedRef2026] = useState<Set<string>>(new Set())
+  const [mktExpandedRef2025, setMktExpandedRef2025] = useState<Set<string>>(new Set())
+  const [mktExpandedEntry, setMktExpandedEntry] = useState<Set<string>>(new Set())
+  const [mktAddingTo, setMktAddingTo] = useState<string | null>(null)
+  const [mktAddForm, setMktAddForm] = useState({ description: '', month: 1, amount: '' })
+  const [mktSaving, setMktSaving] = useState(false)
+  const [mktSubmittingId, setMktSubmittingId] = useState<string | null>(null)
+  const [mktApprovingId, setMktApprovingId] = useState<string | null>(null)
+  const [mktReturningId, setMktReturningId] = useState<string | null>(null)
+  const [mktReturnComment, setMktReturnComment] = useState<Record<string, string>>({})
+
   const [loading, setLoading] = useState(true)
   const [actionMsg, setActionMsg] = useState('')
   const [savingItem, setSavingItem] = useState(false)
   const [submittingId, setSubmittingId] = useState<string | null>(null)
   const [approvingId, setApprovingId] = useState<string | null>(null)
   const [togglingWindow, setTogglingWindow] = useState<string | null>(null)
-  const [copyingQ1, setCopyingQ1] = useState(false)
-  const [copy2028Msg, setCopy2028Msg] = useState('')
 
   // ── Auto-save form to localStorage ────────────────────────────────────────
 
@@ -451,7 +374,7 @@ export default function DashboardPage() {
     setLoading(true)
     setActionMsg('')
 
-    const [res2025, res2026, res2027, res2028, wins, resHires, resCerts] = await Promise.all([
+    const [res2025, res2026, res2027, wins, resHires, resCerts] = await Promise.all([
       supabase
         .from('budget_line_items')
         .select(LINE_SELECT)
@@ -468,12 +391,6 @@ export default function DashboardPage() {
         .from('budget_line_items')
         .select(LINE_SELECT)
         .eq('scenario_id', SCENARIOS.DIRECTOR_2027)
-        .eq('dept_code', dept)
-        .order('account_code').order('created_at'),
-      supabase
-        .from('budget_line_items')
-        .select(LINE_SELECT)
-        .eq('scenario_id', SCENARIOS.DIRECTOR_2028)
         .eq('dept_code', dept)
         .order('account_code').order('created_at'),
       loadWindows(),
@@ -516,11 +433,8 @@ export default function DashboardPage() {
     const items2026 = ((res2026.data ?? []) as any[]).map(cast)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const items2027 = ((res2027.data ?? []) as any[]).map(cast)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const items2028 = ((res2028.data ?? []) as any[]).map(cast)
-    setLineItems2028(items2028)
 
-    const allCodes = [...new Set([...items2025, ...items2026, ...items2027, ...items2028].map(i => i.account_code))].sort()
+    const allCodes = [...new Set([...items2025, ...items2026, ...items2027].map(i => i.account_code))].sort()
     let glDesc: Record<string, string> = {}
     if (allCodes.length > 0) {
       const { data: glRows } = await supabase
@@ -602,6 +516,45 @@ export default function DashboardPage() {
   useEffect(() => {
     if (activeDept) loadBudgetData(activeDept)
   }, [activeDept, loadBudgetData])
+
+  // ── Load marketing budget data (Sales dept 800 + admin) ───────────────────
+
+  const loadMarketingData = useCallback(async () => {
+    const MKT_SELECT = 'id, category, category_code, description, year, month, amount, status, submitted_at, approved_by_jeremiah, jeremiah_approved_at, approved_by_joseph, joseph_approved_at, return_comment'
+    const [res2027, res2026, res2025] = await Promise.all([
+      supabase.from('marketing_budget_items').select(MKT_SELECT).eq('year', 2027).order('category_code').order('month'),
+      supabase.from('marketing_budget_items').select(MKT_SELECT).eq('year', 2026).order('category_code').order('month'),
+      supabase.from('marketing_budget_items').select(MKT_SELECT).eq('year', 2025).order('category_code').order('month'),
+    ])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const castMkt = (r: any): MarketingBudgetItem => ({
+      id: r.id as string,
+      category: r.category as string,
+      category_code: r.category_code as string,
+      description: r.description as string,
+      year: Number(r.year),
+      month: Number(r.month),
+      amount: Number(r.amount),
+      status: (r.status as MarketingBudgetItem['status']) ?? 'draft',
+      submitted_at: r.submitted_at as string | null,
+      approved_by_jeremiah: Boolean(r.approved_by_jeremiah),
+      jeremiah_approved_at: r.jeremiah_approved_at as string | null,
+      approved_by_joseph: Boolean(r.approved_by_joseph),
+      joseph_approved_at: r.joseph_approved_at as string | null,
+      return_comment: r.return_comment as string | null,
+    })
+    setMktItems(((res2027.data ?? []) as any[]).map(castMkt)) // eslint-disable-line
+    setMktRef2026(((res2026.data ?? []) as any[]).map(castMkt)) // eslint-disable-line
+    setMktRef2025(((res2025.data ?? []) as any[]).map(castMkt)) // eslint-disable-line
+  }, [supabase])
+
+  useEffect(() => {
+    const isSales = profile?.dept_code === '800'
+    const isAdminUser = profile?.role === 'admin'
+    if ((isSales || isAdminUser) && activeTab === 'marketing') {
+      loadMarketingData()
+    }
+  }, [activeTab, profile, loadMarketingData])
 
   // ── Load pending items for admin ───────────────────────────────────────────
 
@@ -780,55 +733,32 @@ export default function DashboardPage() {
 
     if (addForm.entryType === 'recurring') {
       const from = Number(addForm.fromMonth)
-      const toMonth = Number(addForm.toMonth)
-      const toYear = addForm.toYear ?? 2027
+      const to = Number(addForm.toMonth)
+      if (from > to) { setActionMsg('Start month must be ≤ end month.'); setSavingItem(false); return }
 
-      // Build 2027 payloads (fromMonth → Dec 2027)
-      const payloads2027 = []
-      const endOf2027 = toYear === 2027 ? toMonth : 12
-      for (let m = from; m <= endOf2027; m++) {
+      const payloads = []
+      for (let m = from; m <= to; m++) {
         if (isPastMonth(m)) continue
-        payloads2027.push({ ...base, month: m })
+        payloads.push({ ...base, month: m })
       }
+      if (payloads.length === 0) { setActionMsg('All selected months are in the past.'); setSavingItem(false); return }
 
-      // Build 2028 payloads (Jan → toMonth 2028) — only when toYear === 2028
-      const payloads2028 = []
-      if (toYear === 2028) {
-        for (let m = 1; m <= toMonth; m++) {
-          if (!isPastMonth2028(m)) payloads2028.push({ ...base, scenario_id: SCENARIOS.DIRECTOR_2028, month: m })
-        }
+      const { data, error } = await supabase
+        .from('budget_line_items').insert(payloads).select(LINE_SELECT)
+
+      if (error) { setActionMsg(`Error: ${error.message}`) }
+      else if (data) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const cast = (data as any[]).map((r: any) => ({
+          ...r, month: Number(r.month), amount: Number(r.amount), status: 'draft' as const,
+          approved_by_jeremiah: false, approved_by_joseph: false,
+          submitted_at: null, jeremiah_approved_at: null, joseph_approved_at: null, return_comment: null,
+        }))
+        setLineItems(prev => [...prev, ...cast])
+        await logAudit('insert', undefined, { count: payloads.length, account_code })
+        clearForm(account_code)
+        setActionMsg(`✓ ${payloads.length} monthly item${payloads.length > 1 ? 's' : ''} saved.`)
       }
-
-      const totalCount = payloads2027.length + payloads2028.length
-      if (totalCount === 0) { setActionMsg('All selected months are in the past.'); setSavingItem(false); return }
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const castItem = (r: any): LineItem => ({
-        ...r, month: Number(r.month), amount: Number(r.amount), status: 'draft' as const,
-        approved_by_jeremiah: false, approved_by_joseph: false,
-        submitted_at: null, jeremiah_approved_at: null, joseph_approved_at: null, return_comment: null,
-      })
-
-      // Insert 2027 items
-      if (payloads2027.length > 0) {
-        const { data, error } = await supabase.from('budget_line_items').insert(payloads2027).select(LINE_SELECT)
-        if (error) { setActionMsg(`Error (2027): ${error.message}`); setSavingItem(false); return }
-        if (data) setLineItems(prev => [...prev, ...(data as any[]).map(castItem)])
-      }
-
-      // Insert 2028 items (cross-year)
-      if (payloads2028.length > 0) {
-        const { data, error } = await supabase.from('budget_line_items').insert(payloads2028).select(LINE_SELECT)
-        if (error) { setActionMsg(`Error (2028): ${error.message}`); setSavingItem(false); return }
-        if (data) setLineItems2028(prev => [...prev, ...(data as any[]).map(castItem)])
-      }
-
-      await logAudit('insert', undefined, { count: totalCount, account_code, crossYear: toYear === 2028 })
-      clearForm(account_code)
-      const msg = toYear === 2028
-        ? `✓ ${payloads2027.length} item${payloads2027.length !== 1 ? 's' : ''} saved in 2027, ${payloads2028.length} item${payloads2028.length !== 1 ? 's' : ''} saved in 2028.`
-        : `✓ ${totalCount} monthly item${totalCount > 1 ? 's' : ''} saved.`
-      setActionMsg(msg)
     } else {
       const month = Number(addForm.month)
       if (isPastMonth(month)) { setActionMsg('That month is in the past and cannot be edited.'); setSavingItem(false); return }
@@ -895,8 +825,6 @@ export default function DashboardPage() {
       month: MONTH_NAMES[item.month - 1],
       amount: item.amount,
       submittedBy: userEmail,
-      directorEmail: userEmail,
-      directorName: userEmail,
     })
     setActionMsg('✓ Submitted for approval.')
     setSubmittingId(null)
@@ -1003,7 +931,6 @@ export default function DashboardPage() {
     if (bothApproved) {
       await sendNotify('approved', {
         dept: deptNames[item.dept_code] ?? item.dept_code,
-        dept_code: item.dept_code,
         description: item.description,
         account_code: item.account_code,
         month: MONTH_NAMES[item.month - 1],
@@ -1038,7 +965,6 @@ export default function DashboardPage() {
     await logAudit('return', item.id, { comment })
     await sendNotify('returned', {
       dept: deptNames[item.dept_code] ?? item.dept_code,
-      dept_code: item.dept_code,
       description: item.description,
       comment,
     })
@@ -1393,311 +1319,395 @@ export default function DashboardPage() {
     )
   }
 
-  // ── Admin panel ───────────────────────────────────────────────────────────
+  // ── Marketing Budget ──────────────────────────────────────────────────────
 
-  // ── 2028 Budget Input renderer ─────────────────────────────────────────────
+  const MKT_CATEGORIES = [
+    { code: '610-000-000', label: 'SEO/Web' },
+    { code: '610-000-001', label: 'Advertising/Media' },
+    { code: '610-000-002', label: 'Trade Shows/Events' },
+    { code: '610-000-003', label: 'Sponsorships' },
+    { code: '610-000-004', label: 'Memberships' },
+  ]
 
-  function render2028Input() {
-    const items = lineItems2028
-    const acctCodes = [...new Set(items.map(i => i.account_code))].sort()
-    const accts2028: AccountMeta[] = acctCodes.map(code => ({
-      account_code: code,
-      description: glDescriptions[code] ?? code,
-    }))
-    // Also show any 2027 GL accounts for this dept (to allow adding new 2028 entries)
-    const allAccts = accounts.length > 0 ? accounts : accts2028
-    const displayAccts = [...new Set([...accts2028.map(a => a.account_code), ...allAccts.map(a => a.account_code)])].sort()
-      .map(code => ({ account_code: code, description: glDescriptions[code] ?? code }))
+  function mktCategoryTotal(items: MarketingBudgetItem[], code: string, month?: number) {
+    return items
+      .filter(i => i.category_code === code && (month == null || i.month === month))
+      .reduce((s, i) => s + i.amount, 0)
+  }
 
+  async function handleMktSave(catCode: string, catLabel: string) {
+    const amt = parseFloat(mktAddForm.amount)
+    if (!mktAddForm.description.trim() || isNaN(amt) || amt <= 0) {
+      setActionMsg('Please fill in description and a valid amount.')
+      return
+    }
+    setMktSaving(true)
+    const { error } = await supabase.from('marketing_budget_items').insert({
+      category: catLabel,
+      category_code: catCode,
+      description: mktAddForm.description.trim(),
+      year: 2027,
+      month: mktAddForm.month,
+      amount: amt,
+      status: 'draft',
+    })
+    if (error) { setActionMsg('Error saving: ' + error.message); setMktSaving(false); return }
+    setMktAddForm({ description: '', month: 1, amount: '' })
+    setMktAddingTo(null)
+    await loadMarketingData()
+    setActionMsg('✓ Saved')
+    setMktSaving(false)
+  }
+
+  async function handleMktDelete(id: string) {
+    await supabase.from('marketing_budget_items').delete().eq('id', id)
+    await loadMarketingData()
+  }
+
+  async function handleMktSubmitAll() {
+    setMktSaving(true)
+    const drafts = mktItems.filter(i => i.status === 'draft' || i.status === 'returned')
+    for (const item of drafts) {
+      await supabase.from('marketing_budget_items').update({ status: 'submitted', submitted_at: new Date().toISOString() }).eq('id', item.id)
+    }
+    await loadMarketingData()
+    setActionMsg(`✓ Submitted ${drafts.length} item${drafts.length > 1 ? 's' : ''}`)
+    setMktSaving(false)
+  }
+
+  async function handleMktApprove(id: string) {
+    setMktApprovingId(id)
+    const item = mktItems.find(i => i.id === id) ?? mktRef2026.find(i => i.id === id)
+    if (!item) { setMktApprovingId(null); return }
+    const updates: Record<string, unknown> = {}
+    if (userEmail.includes('jeremiah') || userEmail.includes('finav')) {
+      updates.approved_by_jeremiah = true
+      updates.jeremiah_approved_at = new Date().toISOString()
+    } else {
+      updates.approved_by_joseph = true
+      updates.joseph_approved_at = new Date().toISOString()
+    }
+    const willBeApproved = (updates.approved_by_jeremiah || item.approved_by_jeremiah) && (updates.approved_by_joseph || item.approved_by_joseph)
+    if (willBeApproved) updates.status = 'approved'
+    await supabase.from('marketing_budget_items').update(updates).eq('id', id)
+    await loadMarketingData()
+    setMktApprovingId(null)
+  }
+
+  async function handleMktReturn(id: string) {
+    const comment = mktReturnComment[id] || ''
+    setMktReturningId(id)
+    await supabase.from('marketing_budget_items').update({ status: 'returned', return_comment: comment }).eq('id', id)
+    await loadMarketingData()
+    setMktReturningId(null)
+    setMktReturnComment(prev => { const n = { ...prev }; delete n[id]; return n })
+  }
+
+  function renderMktRefAccordion(items: MarketingBudgetItem[], expandedSet: Set<string>, toggle: (c: string) => void, yearLabel: string) {
+    const codes = [...new Set(items.map(i => i.category_code))].sort()
+    if (codes.length === 0) return (
+      <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-400 text-sm">
+        No {yearLabel} marketing budget data found.
+      </div>
+    )
     const grandTotal = items.reduce((s, i) => s + i.amount, 0)
-
-    async function handle2028Delete(item: LineItem) {
-      if (!confirm('Delete this 2028 budget item?')) return
-      const { error } = await supabase.from('budget_line_items').delete().eq('id', item.id)
-      if (!error) setLineItems2028(prev => prev.filter(i => i.id !== item.id))
-    }
-
-    async function handle2028Add(account_code: string, formData: ReturnType<typeof emptyForm>) {
-      const amt = parseFloat(formData.amount)
-      if (!amt || amt <= 0) return
-      const base = {
-        scenario_id: SCENARIOS.DIRECTOR_2028,
-        dept_code: activeDept,
-        account_code,
-        description: formData.description.trim(),
-        employee_name: formData.employee_name.trim(),
-        vendor: formData.vendor.trim(),
-        notes: formData.notes.trim(),
-        amount: amt,
-        status: 'draft',
-      }
-      if (formData.entryType === 'recurring') {
-        const from = Number(formData.fromMonth)
-        const to = Number(formData.toMonth)
-        const payloads = []
-        for (let m = from; m <= Math.min(to, 12); m++) {
-          if (!isPastMonth2028(m)) payloads.push({ ...base, month: m })
-        }
-        if (payloads.length === 0) { setActionMsg('All selected months are in the past.'); return }
-        const { data, error } = await supabase.from('budget_line_items').insert(payloads).select(LINE_SELECT)
-        if (error) { setActionMsg(`Error: ${error.message}`); return }
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const cast = (r: any): LineItem => ({
-          id: r.id, account_code: r.account_code, description: r.description,
-          employee_name: r.employee_name, vendor: r.vendor, notes: r.notes,
-          month: Number(r.month), amount: Number(r.amount), status: 'draft',
-          submitted_at: null, approved_by_jeremiah: false, jeremiah_approved_at: null,
-          approved_by_joseph: false, joseph_approved_at: null, return_comment: null,
-        })
-        if (data) setLineItems2028(prev => [...prev, ...(data as any[]).map(cast)])
-        setActionMsg(`✓ ${payloads.length} 2028 monthly item${payloads.length > 1 ? 's' : ''} saved.`)
-      } else {
-        const month = Number(formData.month)
-        const { data, error } = await supabase.from('budget_line_items').insert({ ...base, month }).select(LINE_SELECT).single()
-        if (error) { setActionMsg(`Error: ${error.message}`); return }
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const d = data as any
-        setLineItems2028(prev => [...prev, {
-          id: d.id, account_code: d.account_code, description: d.description,
-          employee_name: d.employee_name, vendor: d.vendor, notes: d.notes,
-          month: Number(d.month), amount: Number(d.amount), status: 'draft',
-          submitted_at: null, approved_by_jeremiah: false, jeremiah_approved_at: null,
-          approved_by_joseph: false, joseph_approved_at: null, return_comment: null,
-        }])
-        setActionMsg('✓ 2028 item saved.')
-      }
-    }
-
     return (
       <div className="space-y-3">
-        {/* Info banner + copy button */}
-        <div className="bg-white rounded-lg border px-4 py-3 flex items-center justify-between gap-3"
-          style={{ borderColor: '#bae6fd', background: '#f0f9ff' }}>
-          <div className="flex items-center gap-2 text-xs text-gray-500 min-w-0">
-            <span style={{ color: '#0369a1', flexShrink: 0 }}>ℹ</span>
-            <span><strong>2028 Budget Input</strong> — Jan–Mar 2028.
-              {items.length === 0
-                ? ' No items yet — use the button to seed from your Q1 2027 budget, or add manually below.'
-                : ` ${items.length} item${items.length !== 1 ? 's' : ''} entered so far.`}
-            </span>
-          </div>
-          <div className="flex flex-col items-end gap-1 flex-shrink-0">
-            <button onClick={handleCopyQ1To2028} disabled={copyingQ1}
-              className="text-xs font-semibold px-3 py-1.5 rounded whitespace-nowrap transition-opacity"
-              style={{ background: '#0369a1', color: '#fff', opacity: copyingQ1 ? 0.6 : 1, cursor: copyingQ1 ? 'wait' : 'pointer' }}>
-              {copyingQ1 ? 'Copying…' : '📋 Copy from Q1 2027'}
-            </button>
-            {copy2028Msg && (
-              <span className="text-xs font-semibold"
-                style={{ color: copy2028Msg.startsWith('✓') ? '#065f46' : '#991b1b' }}>
-                {copy2028Msg}
-              </span>
-            )}
-          </div>
-        </div>
-
-        {displayAccts.length === 0 && (
-          <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-400 text-sm">
-            No GL accounts found. The 2028 budget uses the same GL structure as 2027.
-          </div>
-        )}
-
-        {displayAccts.length > 0 && <div className="overflow-x-auto"><div className="min-w-[680px]">
-          {/* Simple month header for Q1 */}
-          <div className="hidden lg:grid text-xs font-bold uppercase tracking-widest text-gray-400 px-4"
-            style={{ gridTemplateColumns: '280px repeat(3, 100px) 120px 52px' }}>
-            <span>GL / Description</span>
-            {['Jan', 'Feb', 'Mar'].map(m => <span key={m} className="text-right">{m} 2028</span>)}
-            <span className="text-right">Total</span>
-            <span></span>
-          </div>
-
-          {displayAccts.map(acct => {
-            const acctItems = items.filter(i => i.account_code === acct.account_code)
-            const rowTotal = acctItems.reduce((s, i) => s + i.amount, 0)
-            const isExpanded2028 = expandedAccounts.has(`2028-${acct.account_code}`)
-
-            return (
-              <div key={acct.account_code} className="bg-white rounded-lg border shadow-sm overflow-hidden mb-2"
-                style={{ borderColor: isExpanded2028 ? '#316c7f' : '#e5e7eb' }}>
-
-                {/* Row */}
-                <button onClick={() => setExpandedAccounts(prev => {
-                  const next = new Set(prev)
-                  const key = `2028-${acct.account_code}`
-                  if (next.has(key)) next.delete(key); else next.add(key)
-                  return next
-                })}
-                  className="w-full text-left px-4 py-3 hidden lg:grid items-center transition-colors hover:bg-blue-50/40"
-                  style={{ gridTemplateColumns: '280px repeat(3, 100px) 120px 52px', background: isExpanded2028 ? 'rgba(49,108,127,.05)' : 'white' }}>
-                  <span className="flex items-center gap-2 min-w-0">
-                    <span className="font-mono text-xs font-semibold text-gray-400 whitespace-nowrap flex-shrink-0">{acct.account_code}</span>
-                    <span className="font-semibold text-gray-800 text-sm truncate">{acct.description}</span>
-                  </span>
-                  {[1, 2, 3].map(month => {
-                    const t = acctItems.filter(i => i.month === month).reduce((s, i) => s + i.amount, 0)
+        {codes.map(code => {
+          const catItems = items.filter(i => i.category_code === code)
+          const catTotal = catItems.reduce((s, i) => s + i.amount, 0)
+          const isExpanded = expandedSet.has(code)
+          const catLabel = MKT_CATEGORIES.find(c => c.code === code)?.label ?? code
+          return (
+            <div key={code} className="bg-white rounded-lg border shadow-sm overflow-hidden"
+              style={{ borderColor: isExpanded ? '#316c7f' : '#e5e7eb' }}>
+              <button onClick={() => toggle(code)}
+                className="w-full text-left px-4 py-3 flex items-center gap-3 transition-colors hover:bg-blue-50/40"
+                style={{ background: isExpanded ? 'rgba(49,108,127,.05)' : 'white' }}>
+                <span className="font-mono text-xs font-semibold text-gray-400 w-24 flex-shrink-0">{code}</span>
+                <span className="font-semibold text-gray-800 flex-1 text-sm">{catLabel}</span>
+                <span className="hidden lg:flex items-center gap-0">
+                  {Array.from({ length: 12 }, (_, i) => i + 1).map(month => {
+                    const t = mktCategoryTotal(catItems, code, month)
                     return (
-                      <span key={month} className="text-right text-xs"
+                      <span key={month} className="text-right text-xs w-[68px] flex-shrink-0"
                         style={{ color: t > 0 ? '#316c7f' : '#d1d5db', fontVariantNumeric: 'tabular-nums' }}>
                         {t > 0 ? t.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}
                       </span>
                     )
                   })}
-                  <span className="text-right font-bold text-sm whitespace-nowrap"
-                    style={{ color: rowTotal > 0 ? '#1e4757' : '#9ca3af', fontVariantNumeric: 'tabular-nums' }}>
-                    {rowTotal > 0 ? rowTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}
-                  </span>
-                  <span className="flex items-center justify-end gap-1.5">
-                    {acctItems.length > 0 && (
-                      <span className="text-xs font-bold px-1.5 py-0.5 rounded-full"
-                        style={{ background: 'rgba(49,108,127,.12)', color: '#316c7f' }}>{acctItems.length}</span>
-                    )}
-                    <svg className="flex-shrink-0 transition-transform"
-                      style={{ transform: isExpanded2028 ? 'rotate(180deg)' : 'rotate(0deg)' }}
-                      width="16" height="16" viewBox="0 0 16 16" fill="none">
-                      <path d="M4 6l4 4 4-4" stroke="#9ca3af" strokeWidth="1.5" strokeLinecap="round"/>
-                    </svg>
-                  </span>
-                </button>
-                {/* Mobile fallback */}
-                <button onClick={() => setExpandedAccounts(prev => {
-                  const next = new Set(prev)
-                  const key = `2028-${acct.account_code}`
-                  if (next.has(key)) next.delete(key); else next.add(key)
-                  return next
-                })}
-                  className="w-full text-left px-4 py-3 lg:hidden flex items-center gap-2 hover:bg-blue-50/40"
-                  style={{ background: isExpanded2028 ? 'rgba(49,108,127,.05)' : 'white' }}>
-                  <span className="font-mono text-xs font-semibold text-gray-400 whitespace-nowrap">{acct.account_code}</span>
-                  <span className="font-semibold text-gray-800 text-sm truncate flex-1">{acct.description}</span>
-                  <span className="font-bold text-sm whitespace-nowrap ml-auto"
-                    style={{ color: rowTotal > 0 ? '#1e4757' : '#9ca3af', fontVariantNumeric: 'tabular-nums' }}>
-                    {rowTotal > 0 ? rowTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}
-                  </span>
-                </button>
-
-                {isExpanded2028 && (
-                  <div style={{ borderTop: '1px solid rgba(49,108,127,.15)' }}>
-                    {/* Existing items */}
-                    {acctItems.length > 0 && (
-                      <table className="min-w-full text-sm">
-                        <thead>
-                          <tr style={{ background: '#f8fafb' }}>
-                            {['Description', 'Month', 'Amount', 'Notes', ''].map(h => (
-                              <th key={h} className="text-left px-3 py-2 text-xs font-bold uppercase tracking-wider whitespace-nowrap"
-                                style={{ color: '#316c7f' }}>{h}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {acctItems.map((item, idx) => (
-                            <tr key={item.id} className="border-t border-gray-100"
-                              style={{ background: idx % 2 === 0 ? '#fff' : 'rgba(0,0,0,.015)' }}>
-                              <td className="px-3 py-2 text-gray-800 font-medium max-w-[200px] truncate">{item.description}</td>
-                              <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{MONTH_NAMES[item.month - 1]} 2028</td>
-                              <td className="px-3 py-2 text-right font-semibold whitespace-nowrap"
-                                style={{ color: '#316c7f', fontVariantNumeric: 'tabular-nums' }}>
-                                ${item.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                              </td>
-                              <td className="px-3 py-2 text-gray-500 max-w-[140px] truncate">{item.notes || '—'}</td>
-                              <td className="px-3 py-2">
-                                <button onClick={() => handle2028Delete(item)}
-                                  className="text-gray-300 hover:text-red-500 transition-colors" title="Delete">
-                                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                                    <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                                  </svg>
-                                </button>
-                              </td>
-                            </tr>
+                </span>
+                <span className="ml-auto font-bold text-sm w-28 text-right flex-shrink-0"
+                  style={{ color: '#1e4757', fontVariantNumeric: 'tabular-nums' }}>${catTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                <span className="flex-shrink-0 text-xs font-bold px-1.5 py-0.5 rounded-full ml-2"
+                  style={{ background: 'rgba(49,108,127,.12)', color: '#316c7f' }}>{catItems.length}</span>
+                <svg className="flex-shrink-0 ml-2 transition-transform"
+                  style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0)' }}
+                  width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path d="M4 6l4 4 4-4" stroke="#9ca3af" strokeWidth="1.5" strokeLinecap="round"/>
+                </svg>
+              </button>
+              {isExpanded && (
+                <div style={{ borderTop: '1px solid rgba(49,108,127,.15)' }}>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-sm">
+                      <thead>
+                        <tr style={{ background: '#f8fafb' }}>
+                          {['Description', 'Month', 'Amount', 'Status'].map(h => (
+                            <th key={h} className="text-left px-3 py-2 text-xs font-bold uppercase tracking-wider"
+                              style={{ color: '#316c7f', whiteSpace: 'nowrap' }}>{h}</th>
                           ))}
-                        </tbody>
-                      </table>
-                    )}
-
-                    {/* Add form */}
-                    <AddForm2028 acctCode={acct.account_code} onSave={handle2028Add} />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {catItems.map((item, idx) => (
+                          <tr key={item.id} className="border-t border-gray-100"
+                            style={{ background: idx % 2 === 0 ? '#fff' : 'rgba(0,0,0,.015)' }}>
+                            <td className="px-3 py-2 text-gray-800 font-medium">{item.description}</td>
+                            <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{MONTH_NAMES[item.month - 1]}</td>
+                            <td className="px-3 py-2 text-right font-semibold whitespace-nowrap"
+                              style={{ color: '#316c7f', fontVariantNumeric: 'tabular-nums' }}>
+                              ${item.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td className="px-3 py-2"><StatusBadge item={item} /></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
-                )}
-              </div>
-            )
-          })}
-
-          {/* Grand total */}
-          <div className="bg-white rounded-lg border-2 shadow-sm px-4 py-3 flex items-center justify-between"
-            style={{ borderColor: 'rgba(49,108,127,.25)', background: 'rgba(49,108,127,.04)' }}>
-            <span className="font-extrabold text-sm" style={{ color: '#1e4757' }}>Total — {deptLabel} · 2028 Q1</span>
-            <span className="font-extrabold text-base" style={{ color: '#316c7f', fontVariantNumeric: 'tabular-nums' }}>
-              ${grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </span>
-          </div>
-        </div></div>}
+                </div>
+              )}
+            </div>
+          )
+        })}
+        <div className="bg-white rounded-lg border-2 shadow-sm px-4 py-3 flex items-center justify-between"
+          style={{ borderColor: 'rgba(49,108,127,.25)', background: 'rgba(49,108,127,.04)' }}>
+          <span className="font-extrabold text-sm" style={{ color: '#1e4757' }}>Total — Marketing Budget · {yearLabel}</span>
+          <span className="font-extrabold text-base" style={{ color: '#316c7f', fontVariantNumeric: 'tabular-nums' }}>
+            ${grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </span>
+        </div>
+        <p className="text-xs text-gray-400 mt-2">Read-only view of {yearLabel} marketing budget. Click any category to see line items.</p>
       </div>
     )
   }
 
-  async function handleCopyQ1To2028() {
-    setCopyingQ1(true)
-    setCopy2028Msg('')
-    try {
-      // Fetch Q1 (months 1-3) items from 2027 for this department only
-      const { data: q1Items, error: fetchErr } = await supabase
-        .from('budget_line_items')
-        .select('account_code, description, employee_name, vendor, notes, month, amount, dept_code')
-        .eq('scenario_id', SCENARIOS.DIRECTOR_2027)
-        .eq('dept_code', activeDept)
-        .in('month', [1, 2, 3])
-      if (fetchErr) { setCopy2028Msg(`Error: ${fetchErr.message}`); setCopyingQ1(false); return }
-      if (!q1Items || q1Items.length === 0) {
-        setCopy2028Msg('No Q1 2027 items found for your department to copy.')
-        setCopyingQ1(false); return
-      }
-      // Check for existing 2028 items for this dept only
-      const { data: existing } = await supabase
-        .from('budget_line_items')
-        .select('id')
-        .eq('scenario_id', SCENARIOS.DIRECTOR_2028)
-        .eq('dept_code', activeDept)
-      if (existing && existing.length > 0) {
-        setCopy2028Msg(`Your 2028 budget already has ${existing.length} item(s). Delete them first if you want a fresh copy.`)
-        setCopyingQ1(false); return
-      }
-      // Insert copies with status=draft
-      const payloads = q1Items.map(i => ({
-        scenario_id: SCENARIOS.DIRECTOR_2028,
-        dept_code: i.dept_code,
-        account_code: i.account_code,
-        description: i.description,
-        employee_name: i.employee_name,
-        vendor: i.vendor,
-        notes: i.notes,
-        month: i.month,
-        amount: i.amount,
-        status: 'draft',
-      }))
-      const { error: insertErr } = await supabase.from('budget_line_items').insert(payloads)
-      if (insertErr) { setCopy2028Msg(`Insert error: ${insertErr.message}`); setCopyingQ1(false); return }
-      setCopy2028Msg(`✓ Copied ${payloads.length} Q1 item${payloads.length !== 1 ? 's' : ''} (Jan–Mar) from your 2027 budget into 2028.`)
-      // Refresh 2028 items
-      const { data: fresh } = await supabase
-        .from('budget_line_items').select(LINE_SELECT)
-        .eq('scenario_id', SCENARIOS.DIRECTOR_2028).eq('dept_code', activeDept)
-        .order('account_code').order('created_at')
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const cast2028 = (r: any): LineItem => ({
-        id: r.id, account_code: r.account_code, description: r.description,
-        employee_name: r.employee_name, vendor: r.vendor, notes: r.notes,
-        month: Number(r.month), amount: Number(r.amount),
-        status: (r.status ?? 'draft') as LineItem['status'],
-        submitted_at: r.submitted_at, approved_by_jeremiah: Boolean(r.approved_by_jeremiah),
-        jeremiah_approved_at: r.jeremiah_approved_at, approved_by_joseph: Boolean(r.approved_by_joseph),
-        joseph_approved_at: r.joseph_approved_at, return_comment: r.return_comment,
-      })
-      setLineItems2028((fresh ?? []).map(cast2028))
-    } catch (e) {
-      setCopy2028Msg(`Unexpected error: ${String(e)}`)
-    }
-    setCopyingQ1(false)
+  function renderMarketingBudget() {
+    const mktDraftCount = mktItems.filter(i => i.status === 'draft' || i.status === 'returned').length
+    return (
+      <div className="space-y-4">
+        {/* Sub-tabs */}
+        <div className="flex gap-1" style={{ borderBottom: '1px solid #e5e7eb' }}>
+          {([
+            { key: 'entry'   as const, label: '2027 Entry', count: mktDraftCount },
+            { key: 'ref2026' as const, label: '2026 Reference', count: 0 },
+            { key: 'ref2025' as const, label: '2025 Reference', count: 0 },
+          ]).map(st => (
+            <button key={st.key} onClick={() => setMktActiveSubTab(st.key)}
+              className="relative px-4 py-2 text-sm font-semibold transition-colors"
+              style={{
+                marginBottom: '-1px',
+                color: mktActiveSubTab === st.key ? '#316c7f' : '#9ca3af',
+                background: 'transparent', border: 'none',
+                borderBottom: `2px solid ${mktActiveSubTab === st.key ? '#316c7f' : 'transparent'}`,
+                cursor: 'pointer',
+              }}>
+              {st.label}
+              {st.count > 0 && (
+                <span className="ml-1.5 text-xs font-bold px-1.5 py-0.5 rounded-full"
+                  style={{ background: 'rgba(49,108,127,.12)', color: '#316c7f' }}>{st.count}</span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* 2026 / 2025 reference tabs */}
+        {mktActiveSubTab === 'ref2026' && renderMktRefAccordion(mktRef2026, mktExpandedRef2026, (c) => setMktExpandedRef2026(prev => { const s = new Set(prev); s.has(c) ? s.delete(c) : s.add(c); return s }), '2026')}
+        {mktActiveSubTab === 'ref2025' && renderMktRefAccordion(mktRef2025, mktExpandedRef2025, (c) => setMktExpandedRef2025(prev => { const s = new Set(prev); s.has(c) ? s.delete(c) : s.add(c); return s }), '2025')}
+
+        {/* 2027 entry tab */}
+        {mktActiveSubTab === 'entry' && (
+          <div className="space-y-3">
+
+            {/* Submit bar */}
+            {windowOpen && mktDraftCount > 0 && (
+              <div className="bg-white rounded-lg border px-4 py-3 flex items-center justify-between shadow-sm"
+                style={{ borderColor: '#fbbf24', background: '#fffbeb' }}>
+                <div className="text-sm font-semibold" style={{ color: '#92400e' }}>
+                  {mktDraftCount} draft item{mktDraftCount > 1 ? 's' : ''} ready to submit
+                </div>
+                <button onClick={handleMktSubmitAll} disabled={mktSaving}
+                  className="btn-primary text-sm px-4 py-2">
+                  {mktSaving ? 'Submitting…' : `Submit All (${mktDraftCount})`}
+                </button>
+              </div>
+            )}
+            {!windowOpen && !isAdmin && (
+              <div className="bg-white rounded-lg border px-4 py-2.5 flex items-center gap-2 text-xs text-gray-500"
+                style={{ borderColor: '#e5e7eb' }}>
+                <span style={{ color: '#d1d5db' }}>●</span>
+                Submission window is <strong>closed</strong>. You can save items but cannot submit until it's opened.
+              </div>
+            )}
+
+            {/* Category accordions */}
+            {MKT_CATEGORIES.map(cat => {
+              const catItems = mktItems.filter(i => i.category_code === cat.code)
+              const catTotal = catItems.reduce((s, i) => s + i.amount, 0)
+              const isExpanded = mktExpandedEntry.has(cat.code)
+              const draftItems = catItems.filter(i => i.status === 'draft' || i.status === 'returned')
+              return (
+                <div key={cat.code} className="bg-white rounded-lg border shadow-sm overflow-hidden"
+                  style={{ borderColor: isExpanded ? '#316c7f' : '#e5e7eb' }}>
+                  <button
+                    onClick={() => setMktExpandedEntry(prev => { const s = new Set(prev); s.has(cat.code) ? s.delete(cat.code) : s.add(cat.code); return s })}
+                    className="w-full text-left px-4 py-3 flex items-center gap-3 transition-colors hover:bg-blue-50/40"
+                    style={{ background: isExpanded ? 'rgba(49,108,127,.05)' : 'white' }}>
+                    <span className="font-mono text-xs font-semibold text-gray-400 w-24 flex-shrink-0">{cat.code}</span>
+                    <span className="font-semibold text-gray-800 flex-1 text-sm">{cat.label}</span>
+                    {draftItems.length > 0 && (
+                      <span className="text-xs font-bold px-1.5 py-0.5 rounded-full"
+                        style={{ background: 'rgba(251,191,36,.2)', color: '#92400e' }}>{draftItems.length} draft</span>
+                    )}
+                    <span className="font-bold text-sm w-28 text-right flex-shrink-0"
+                      style={{ color: '#1e4757', fontVariantNumeric: 'tabular-nums' }}>{catTotal > 0 ? `$${catTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}</span>
+                    <svg className="flex-shrink-0 ml-2 transition-transform"
+                      style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0)' }}
+                      width="16" height="16" viewBox="0 0 16 16" fill="none">
+                      <path d="M4 6l4 4 4-4" stroke="#9ca3af" strokeWidth="1.5" strokeLinecap="round"/>
+                    </svg>
+                  </button>
+
+                  {isExpanded && (
+                    <div style={{ borderTop: '1px solid rgba(49,108,127,.15)' }}>
+                      {/* Existing items */}
+                      {catItems.length > 0 && (
+                        <div className="overflow-x-auto">
+                          <table className="min-w-full text-sm">
+                            <thead>
+                              <tr style={{ background: '#f8fafb' }}>
+                                {['Description', 'Month', 'Amount', 'Status', ...(isAdmin ? ['Actions'] : [''])].map(h => (
+                                  <th key={h} className="text-left px-3 py-2 text-xs font-bold uppercase tracking-wider"
+                                    style={{ color: '#316c7f', whiteSpace: 'nowrap' }}>{h}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {catItems.map((item, idx) => (
+                                <tr key={item.id} className="border-t border-gray-100"
+                                  style={{ background: idx % 2 === 0 ? '#fff' : 'rgba(0,0,0,.015)' }}>
+                                  <td className="px-3 py-2 text-gray-800 font-medium">{item.description}
+                                    {item.return_comment && <span className="ml-2 text-xs text-red-500 italic">"{item.return_comment}"</span>}
+                                  </td>
+                                  <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{MONTH_NAMES[item.month - 1]}</td>
+                                  <td className="px-3 py-2 text-right font-semibold whitespace-nowrap"
+                                    style={{ color: '#316c7f', fontVariantNumeric: 'tabular-nums' }}>
+                                    ${item.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </td>
+                                  <td className="px-3 py-2 whitespace-nowrap"><StatusBadge item={item} /></td>
+                                  <td className="px-3 py-2 whitespace-nowrap">
+                                    {isAdmin && item.status === 'submitted' && (
+                                      <div className="flex items-center gap-2">
+                                        <button onClick={() => handleMktApprove(item.id)} disabled={mktApprovingId === item.id}
+                                          className="text-xs font-bold px-2 py-1 rounded"
+                                          style={{ background: '#d1fae5', color: '#065f46', border: 'none', cursor: 'pointer' }}>
+                                          {mktApprovingId === item.id ? '…' : 'Approve'}
+                                        </button>
+                                        {mktReturningId === item.id ? (
+                                          <div className="flex items-center gap-1">
+                                            <input className="input-field text-xs py-0.5 px-1.5 w-32"
+                                              placeholder="Return comment"
+                                              value={mktReturnComment[item.id] ?? ''}
+                                              onChange={e => setMktReturnComment(p => ({ ...p, [item.id]: e.target.value }))} />
+                                            <button onClick={() => handleMktReturn(item.id)}
+                                              className="text-xs font-bold px-2 py-1 rounded"
+                                              style={{ background: '#fee2e2', color: '#991b1b', border: 'none', cursor: 'pointer' }}>Send</button>
+                                          </div>
+                                        ) : (
+                                          <button onClick={() => setMktReturningId(item.id)}
+                                            className="text-xs font-bold px-2 py-1 rounded"
+                                            style={{ background: '#fee2e2', color: '#991b1b', border: 'none', cursor: 'pointer' }}>Return</button>
+                                        )}
+                                      </div>
+                                    )}
+                                    {!isAdmin && (item.status === 'draft' || item.status === 'returned') && (
+                                      <button onClick={() => handleMktDelete(item.id)}
+                                        className="text-xs text-gray-400 hover:text-red-500 transition-colors"
+                                        style={{ background: 'none', border: 'none', cursor: 'pointer' }}>✕ Delete</button>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+
+                      {/* Add form */}
+                      {(windowOpen || isAdmin) && (
+                        <div className="px-4 py-3" style={{ borderTop: catItems.length > 0 ? '1px solid #f3f4f6' : undefined }}>
+                          {mktAddingTo === cat.code ? (
+                            <div className="flex flex-wrap items-end gap-3">
+                              <div>
+                                <label className="text-xs font-bold text-gray-500 block mb-1">Description</label>
+                                <input className="input-field w-56 text-sm"
+                                  placeholder="Line item description"
+                                  value={mktAddForm.description}
+                                  onChange={e => setMktAddForm(p => ({ ...p, description: e.target.value }))} />
+                              </div>
+                              <div>
+                                <label className="text-xs font-bold text-gray-500 block mb-1">Month</label>
+                                <select className="input-field text-sm"
+                                  value={mktAddForm.month}
+                                  onChange={e => setMktAddForm(p => ({ ...p, month: Number(e.target.value) }))}>
+                                  {MONTH_NAMES.map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
+                                </select>
+                              </div>
+                              <div>
+                                <label className="text-xs font-bold text-gray-500 block mb-1">Amount ($)</label>
+                                <input className="input-field w-28 text-sm" type="number" min="0" step="0.01"
+                                  placeholder="0.00"
+                                  value={mktAddForm.amount}
+                                  onChange={e => setMktAddForm(p => ({ ...p, amount: e.target.value }))} />
+                              </div>
+                              <button onClick={() => handleMktSave(cat.code, cat.label)} disabled={mktSaving}
+                                className="btn-primary text-sm px-4 py-2">{mktSaving ? 'Saving…' : 'Save'}</button>
+                              <button onClick={() => { setMktAddingTo(null); setMktAddForm({ description: '', month: 1, amount: '' }) }}
+                                className="text-sm text-gray-400 hover:text-gray-700"
+                                style={{ background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
+                            </div>
+                          ) : (
+                            <button onClick={() => { setMktAddingTo(cat.code); setMktAddForm({ description: '', month: 1, amount: '' }) }}
+                              className="text-sm font-semibold transition-colors"
+                              style={{ color: '#316c7f', background: 'none', border: 'none', cursor: 'pointer' }}>
+                              + Add line item
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+
+            {/* Grand total */}
+            {mktItems.length > 0 && (
+              <div className="bg-white rounded-lg border-2 shadow-sm px-4 py-3 flex items-center justify-between"
+                style={{ borderColor: 'rgba(49,108,127,.25)', background: 'rgba(49,108,127,.04)' }}>
+                <span className="font-extrabold text-sm" style={{ color: '#1e4757' }}>Total — 2027 Marketing Budget</span>
+                <span className="font-extrabold text-base" style={{ color: '#316c7f', fontVariantNumeric: 'tabular-nums' }}>
+                  ${mktItems.reduce((s, i) => s + i.amount, 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    )
   }
+
+  // ── Admin panel ───────────────────────────────────────────────────────────
 
   function renderAdminPanel() {
     const allDeptCodes = Object.keys(deptNames)
@@ -1762,31 +1772,6 @@ export default function DashboardPage() {
               )
             })}
           </div>
-        </div>
-
-        {/* ── 2028 Q1 Seed ── */}
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <h3 className="font-extrabold text-sm uppercase tracking-widest" style={{ color: '#1e4757' }}>
-                Seed 2028 Q1 Budget
-              </h3>
-              <p className="text-xs text-gray-500 mt-1">
-                Copies Jan–Mar 2027 expense items for the currently selected department into 2028 as drafts.
-                Each director runs this for their own department. Blocked if that dept already has 2028 data.
-              </p>
-            </div>
-            <button onClick={handleCopyQ1To2028} disabled={copyingQ1}
-              className="btn-primary text-xs px-4 py-2 whitespace-nowrap flex-shrink-0 ml-4">
-              {copyingQ1 ? 'Copying…' : '📋 Copy Q1 2027 → 2028'}
-            </button>
-          </div>
-          {copy2028Msg && (
-            <div className="text-sm font-semibold px-3 py-2 rounded"
-              style={{ background: copy2028Msg.startsWith('✓') ? '#d1fae5' : '#fee2e2', color: copy2028Msg.startsWith('✓') ? '#065f46' : '#991b1b' }}>
-              {copy2028Msg}
-            </div>
-          )}
         </div>
 
         {/* ── Pending approvals ── */}
@@ -2090,19 +2075,17 @@ export default function DashboardPage() {
   const draftCount = expDraftCount + hireDraftCount + certDraftCount
   const totalPendingAdmin = pendingItems.length + pendingHires.length + pendingCerts.length
 
+  const showMarketing = isAdmin || profile.dept_code === '800'
   const tabs = [
-    { key: 'input'     as const, label: '2027 Budget Input' },
-    { key: 'input2028' as const, label: '2028 Budget Input' },
-    { key: 'ref2026'   as const, label: '2026 Approved' },
-    { key: 'ref2025'   as const, label: '2025 Approved' },
+    { key: 'input'   as const, label: '2027 Budget Input' },
+    { key: 'ref2026' as const, label: '2026 Approved' },
+    { key: 'ref2025' as const, label: '2025 Approved' },
+    ...(showMarketing ? [{ key: 'marketing' as const, label: '📣 Marketing Budget' }] : []),
     ...(isAdmin ? [{ key: 'admin' as const, label: '⚙ Admin' }] : []),
   ]
 
   // Recurring preview
-  const recurringCount = addForm.entryType !== 'recurring' ? 0
-    : addForm.toYear === 2028
-      ? Math.max(0, 12 - Number(addForm.fromMonth) + 1) + Math.max(0, Number(addForm.toMonth))
-      : Math.max(0, Number(addForm.toMonth) - Number(addForm.fromMonth) + 1)
+  const recurringCount = Math.max(0, Number(addForm.toMonth) - Number(addForm.fromMonth) + 1)
   const recurringTotal = recurringCount * Number(addForm.amount || 0)
 
   return (
@@ -2209,11 +2192,11 @@ export default function DashboardPage() {
 
         ) : activeTab === 'admin' ? renderAdminPanel()
 
+        : activeTab === 'marketing' ? renderMarketingBudget()
+
         : activeTab === 'ref2026' ? renderRefAccordion(ref2026Items, expandedRef2026, toggleRef2026, '2026')
 
         : activeTab === 'ref2025' ? renderRefAccordion(ref2025Items, expandedRef2025, toggleRef2025, '2025')
-
-        : activeTab === 'input2028' ? render2028Input()
 
         : (
           /* ── Input Tab ──────────────────────────────────────────────────── */
@@ -2274,7 +2257,7 @@ export default function DashboardPage() {
               </div>
             )}
             {accounts.length > 0 && <div className="overflow-x-auto">
-            <div className="min-w-[1320px]">
+            <div className="min-w-[1200px]">
             {/* Column headers — must match accordion row grid exactly */}
             <div className="hidden lg:grid text-xs font-bold uppercase tracking-widest text-gray-400 px-4"
               style={{ gridTemplateColumns: '280px repeat(12, 72px) 120px 52px' }}>
@@ -2511,40 +2494,16 @@ export default function DashboardPage() {
                                     <select value={addForm.fromMonth}
                                       onChange={e => setAddForm(f => ({ ...f, fromMonth: Number(e.target.value) }))}
                                       className="input-field" style={{ width: 100 }}>
-                                      {MONTH_NAMES.map((m, i) => <option key={i} value={i + 1}>{m} 2027</option>)}
+                                      {MONTH_NAMES.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
                                     </select>
                                   </div>
                                   <div className="flex flex-col gap-1">
                                     <label className="text-xs font-semibold text-gray-500">To <span style={{ color: '#ff930c' }}>*</span></label>
-                                    <div className="flex gap-1 items-center">
-                                      <select value={addForm.toMonth}
-                                        onChange={e => {
-                                          const toMonth = Number(e.target.value)
-                                          // If toYear=2028, cap at Mar (3)
-                                          setAddForm(f => ({ ...f, toMonth }))
-                                        }}
-                                        className="input-field" style={{ width: 100 }}>
-                                        {(addForm.toYear === 2028
-                                          ? MONTH_NAMES.slice(0, 3)
-                                          : MONTH_NAMES
-                                        ).map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
-                                      </select>
-                                      {/* Year selector */}
-                                      <select value={addForm.toYear ?? 2027}
-                                        onChange={e => {
-                                          const toYear = Number(e.target.value)
-                                          setAddForm(f => ({
-                                            ...f,
-                                            toYear,
-                                            // If switching to 2028, cap toMonth at 3 (Mar)
-                                            toMonth: toYear === 2028 ? Math.min(f.toMonth, 3) : f.toMonth,
-                                          }))
-                                        }}
-                                        className="input-field" style={{ width: 80 }}>
-                                        <option value={2027}>2027</option>
-                                        <option value={2028}>2028</option>
-                                      </select>
-                                    </div>
+                                    <select value={addForm.toMonth}
+                                      onChange={e => setAddForm(f => ({ ...f, toMonth: Number(e.target.value) }))}
+                                      className="input-field" style={{ width: 100 }}>
+                                      {MONTH_NAMES.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+                                    </select>
                                   </div>
                                 </>
                               )}
@@ -2574,18 +2533,12 @@ export default function DashboardPage() {
 
                             {/* Recurring preview chip */}
                             {addForm.entryType === 'recurring' && Number(addForm.amount) > 0 && recurringCount > 0 && (
-                              <div className="flex flex-wrap items-center gap-2 text-xs font-semibold rounded-md px-3 py-2 w-fit"
+                              <div className="flex items-center gap-2 text-xs font-semibold rounded-md px-3 py-2 w-fit"
                                 style={{ background: 'rgba(49,108,127,.08)', color: '#316c7f' }}>
                                 🔁&nbsp;{recurringCount} month{recurringCount !== 1 ? 's' : ''} ×&nbsp;
                                 ${Number(addForm.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 &nbsp;=&nbsp;
                                 <strong>${recurringTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} total</strong>
-                                {addForm.toYear === 2028 && (
-                                  <span className="ml-1 px-2 py-0.5 rounded-full text-xs font-bold"
-                                    style={{ background: '#dbeafe', color: '#1d4ed8' }}>
-                                    {12 - Number(addForm.fromMonth) + 1} in 2027 · {Number(addForm.toMonth)} in 2028
-                                  </span>
-                                )}
                               </div>
                             )}
                           </div>
