@@ -1412,6 +1412,19 @@ export default function DashboardPage() {
     const grandTotal = items.reduce((s, i) => s + i.amount, 0)
     return (
       <div className="space-y-3">
+        {/* Column headers */}
+        <div className="hidden lg:flex items-center gap-3 px-4 py-1 text-xs font-bold uppercase tracking-widest text-gray-400">
+          <span className="w-24 flex-shrink-0"></span>
+          <span className="flex-1">Category</span>
+          <span className="flex items-center gap-0">
+            {MONTH_NAMES.map(m => (
+              <span key={m} className="text-right w-[68px] flex-shrink-0">{m}</span>
+            ))}
+          </span>
+          <span className="ml-auto w-28 text-right flex-shrink-0">Total</span>
+          <span className="w-4 flex-shrink-0"></span>
+          <span className="w-6 flex-shrink-0"></span>
+        </div>
         {codes.map(code => {
           const catItems = items.filter(i => i.category_code === code)
           const catTotal = catItems.reduce((s, i) => s + i.amount, 0)
@@ -1549,6 +1562,18 @@ export default function DashboardPage() {
             )}
 
             {/* Category accordions */}
+            {/* Column headers */}
+            <div className="hidden lg:flex items-center gap-3 px-4 py-1 text-xs font-bold uppercase tracking-widest text-gray-400">
+              <span className="w-24 flex-shrink-0"></span>
+              <span className="flex-1">Category</span>
+              <span className="flex items-center gap-0">
+                {MONTH_NAMES.map(m => (
+                  <span key={m} className="text-right w-[68px] flex-shrink-0">{m}</span>
+                ))}
+              </span>
+              <span className="ml-auto w-28 text-right flex-shrink-0">Total</span>
+              <span className="w-4 flex-shrink-0"></span>
+            </div>
             {MKT_CATEGORIES.map(cat => {
               const catItems = mktItems.filter(i => i.category_code === cat.code)
               const catTotal = catItems.reduce((s, i) => s + i.amount, 0)
