@@ -895,6 +895,8 @@ export default function DashboardPage() {
       month: MONTH_NAMES[item.month - 1],
       amount: item.amount,
       submittedBy: userEmail,
+      directorEmail: userEmail,
+      directorName: userEmail,
     })
     setActionMsg('✓ Submitted for approval.')
     setSubmittingId(null)
@@ -1001,6 +1003,7 @@ export default function DashboardPage() {
     if (bothApproved) {
       await sendNotify('approved', {
         dept: deptNames[item.dept_code] ?? item.dept_code,
+        dept_code: item.dept_code,
         description: item.description,
         account_code: item.account_code,
         month: MONTH_NAMES[item.month - 1],
@@ -1035,6 +1038,7 @@ export default function DashboardPage() {
     await logAudit('return', item.id, { comment })
     await sendNotify('returned', {
       dept: deptNames[item.dept_code] ?? item.dept_code,
+      dept_code: item.dept_code,
       description: item.description,
       comment,
     })
