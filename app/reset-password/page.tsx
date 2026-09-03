@@ -41,26 +41,43 @@ function ResetPasswordForm() {
 
   useEffect(() => {
     const supabase = createClient()
-    const code       = searchParams.get('code')
-    const tokenHash  = searchParams.get('token_hash')
-    const type       = searchParams.get('type')
+
+    // Method 1: Listen for PASSWORD_RECOVERY event (handles hash-based implicit flow)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setStatus('idle')
+      }
+    })
+
+    // Method 2: Handle query-param based flows (PKCE code or token_hash)
+    const code      = searchParams.get('code')
+    const tokenHash = searchParams.get('token_hash')
+    const type      = searchParams.get('type') ?? 'recovery'
 
     if (code) {
-      // PKCE flow
       supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
         if (error) { setError('This reset link has expired or already been used.'); setStatus('error') }
         else { setStatus('idle') }
       })
-    } else if (tokenHash && type) {
-      // Email OTP / token_hash flow
+    } else if (tokenHash) {
       supabase.auth.verifyOtp({ token_hash: tokenHash, type: type as 'recovery' }).then(({ error }) => {
         if (error) { setError('This reset link has expired or already been used.'); setStatus('error') }
         else { setStatus('idle') }
       })
     } else {
-      setError('No reset code found. Please request a new link.')
-      setStatus('error')
+      // No query params — the hash flow will fire onAuthStateChange above.
+      // Give it 5 seconds before showing an error.
+      const timer = setTimeout(() => {
+        setStatus((s) => s === 'exchanging' ? 'error' : s)
+        setError('No reset code found. Please request a new link.')
+      }, 5000)
+      return () => {
+        clearTimeout(timer)
+        subscription.unsubscribe()
+      }
     }
+
+    return () => subscription.unsubscribe()
   }, [searchParams])
 
   async function handleReset(e: React.FormEvent) {
