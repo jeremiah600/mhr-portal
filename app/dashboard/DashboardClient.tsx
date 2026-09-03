@@ -549,10 +549,10 @@ export default function DashboardPage() {
   }, [supabase])
 
   useEffect(() => {
-    if (profile?.dept_code === '800') {
+    if (activeDept === '800') {
       loadMarketingData()
     }
-  }, [profile, loadMarketingData])
+  }, [activeDept, loadMarketingData])
 
   // ── Load pending items for admin ───────────────────────────────────────────
 
@@ -2061,7 +2061,7 @@ export default function DashboardPage() {
   const draftCount = expDraftCount + hireDraftCount + certDraftCount
   const totalPendingAdmin = pendingItems.length + pendingHires.length + pendingCerts.length
 
-  const isSalesDept = profile.dept_code === '800'
+  const isSalesDept = activeDept === '800'
   const tabs = [
     { key: 'input'   as const, label: '2027 Budget Input' },
     { key: 'ref2026' as const, label: '2026 Approved' },
