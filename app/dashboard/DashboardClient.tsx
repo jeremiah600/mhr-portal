@@ -1374,6 +1374,14 @@ export default function DashboardPage() {
     setMktSaving(false)
   }
 
+  async function handleMktSubmitOne(id: string) {
+    setMktSubmittingId(id)
+    await supabase.from('marketing_budget_items').update({ status: 'submitted', submitted_at: new Date().toISOString() }).eq('id', id)
+    await loadMarketingData()
+    setActionMsg('✓ Item submitted')
+    setMktSubmittingId(null)
+  }
+
   async function handleMktApprove(id: string) {
     setMktApprovingId(id)
     const item = mktItems.find(i => i.id === id) ?? mktRef2026.find(i => i.id === id)
@@ -1664,10 +1672,19 @@ export default function DashboardPage() {
                                         )}
                                       </div>
                                     )}
-                                    {!isAdmin && (item.status === 'draft' || item.status === 'returned') && (
-                                      <button onClick={() => handleMktDelete(item.id)}
-                                        className="text-xs text-gray-400 hover:text-red-500 transition-colors"
-                                        style={{ background: 'none', border: 'none', cursor: 'pointer' }}>✕ Delete</button>
+                                    {(item.status === 'draft' || item.status === 'returned') && (
+                                      <div className="flex items-center gap-2">
+                                        {windowOpen && (
+                                          <button onClick={() => handleMktSubmitOne(item.id)} disabled={mktSubmittingId === item.id}
+                                            className="text-xs font-bold px-2 py-1 rounded"
+                                            style={{ background: 'rgba(49,108,127,.12)', color: '#316c7f', border: 'none', cursor: 'pointer' }}>
+                                            {mktSubmittingId === item.id ? '…' : 'Submit'}
+                                          </button>
+                                        )}
+                                        <button onClick={() => handleMktDelete(item.id)}
+                                          className="text-xs text-gray-400 hover:text-red-500 transition-colors"
+                                          style={{ background: 'none', border: 'none', cursor: 'pointer' }}>✕ Delete</button>
+                                      </div>
                                     )}
                                   </td>
                                 </tr>
