@@ -116,6 +116,23 @@ interface MarketingBudgetItem {
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
+// Approved certifications with their fixed annual raise amounts (per executive authorization)
+const APPROVED_CERTS: { name: string; annual: number }[] = [
+  { name: 'aPHR',                               annual: 1040  },
+  { name: 'PHR',                                annual: 2080  },
+  { name: 'SPHR',                               annual: 4160  },
+  { name: 'Insurance License (L&H / P&C)',       annual: 1040  },
+  { name: 'Fundamental Payroll Certification',   annual: 1040  },
+  { name: 'Certified Payroll Professional',      annual: 2080  },
+  { name: 'Certified Safety Professional',       annual: 4160  },
+  { name: 'Enrolled Agent (IRS)',                annual: 4160  },
+  { name: 'Certified Public Accountant',         annual: 8000  },
+  { name: 'Retirement Plan Fund Certification',  annual: 1040  },
+  { name: 'Authorized OSHA Trainer',             annual: 6240  },
+]
+// Hourly raise = annual ÷ 2080 work hours
+const certHourlyRaise = (annual: number) => annual / 2080
+
 const LINE_SELECT = [
   'id', 'account_code', 'description', 'employee_name', 'vendor', 'notes',
   'month', 'amount', 'status', 'submitted_at',
@@ -1095,9 +1112,9 @@ export default function DashboardPage() {
 
   async function handleAddCert() {
     if (!certForm.employee_name.trim()) { setActionMsg('Employee name is required.'); return }
-    if (!certForm.certification_name.trim()) { setActionMsg('Certification name is required.'); return }
+    if (!certForm.certification_name) { setActionMsg('Please select a certification.'); return }
     const raise = Number(certForm.hourly_raise)
-    if (!raise || raise <= 0) { setActionMsg('Enter a valid hourly raise.'); return }
+    if (!raise || raise <= 0) { setActionMsg('Certification raise could not be calculated.'); return }
     setCertSaving(true); setActionMsg('')
     const { data, error } = await supabase
       .from('budget_cert_raises')
@@ -2957,6 +2974,43 @@ export default function DashboardPage() {
                   </div>
                 )}
 
+                {/* Certification Guide */}
+                <details className="rounded-lg border bg-white shadow-sm" style={{ borderColor: '#e5e7eb' }}>
+                  <summary className="px-4 py-3 text-sm font-semibold cursor-pointer select-none flex items-center gap-2"
+                    style={{ color: '#316c7f' }}>
+                    🎓 Approved Certification Raises Guide
+                    <span className="text-xs font-normal text-gray-400 ml-auto">click to expand</span>
+                  </summary>
+                  <div className="px-4 pb-4">
+                    <p className="text-xs text-gray-500 mb-3">
+                      The following certifications are approved for pay increases. Hourly raise = annual ÷ 2,080 hrs.
+                      All requests must be reasonable and are subject to final approval by the Executive Team.
+                    </p>
+                    <table className="w-full text-sm border-collapse">
+                      <thead>
+                        <tr style={{ background: '#f8fafc' }}>
+                          <th className="text-left px-3 py-2 text-xs font-bold uppercase tracking-wider text-gray-500 border-b" style={{ borderColor: '#e5e7eb' }}>Certification</th>
+                          <th className="text-right px-3 py-2 text-xs font-bold uppercase tracking-wider text-gray-500 border-b" style={{ borderColor: '#e5e7eb' }}>Annual Raise</th>
+                          <th className="text-right px-3 py-2 text-xs font-bold uppercase tracking-wider text-gray-500 border-b" style={{ borderColor: '#e5e7eb' }}>Hourly Raise</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {APPROVED_CERTS.map((c, i) => (
+                          <tr key={c.name} style={{ background: i % 2 === 0 ? '#fff' : '#f8fafc' }}>
+                            <td className="px-3 py-2 font-medium text-gray-800 border-b" style={{ borderColor: '#f0f0f0' }}>{c.name}</td>
+                            <td className="px-3 py-2 text-right text-gray-600 border-b font-variant-numeric tabular-nums" style={{ borderColor: '#f0f0f0', fontVariantNumeric: 'tabular-nums' }}>
+                              ${c.annual.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            </td>
+                            <td className="px-3 py-2 text-right font-semibold border-b" style={{ borderColor: '#f0f0f0', color: '#316c7f', fontVariantNumeric: 'tabular-nums' }}>
+                              +${certHourlyRaise(c.annual).toFixed(4)}/hr
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
+
                 {/* Add cert form */}
                 <div className="bg-white rounded-lg border shadow-sm p-4" style={{ borderColor: '#e5e7eb' }}>
                   {addingCert ? (
@@ -2976,10 +3030,24 @@ export default function DashboardPage() {
                             className="input-field" style={{ width: 110 }} />
                         </div>
                         <div className="flex flex-col gap-1">
-                          <label className="text-xs font-semibold text-gray-500">Certification Name <span style={{ color: '#ff930c' }}>*</span></label>
-                          <input type="text" placeholder="e.g. PHR, SHRM-CP" value={certForm.certification_name}
-                            onChange={e => setCertForm(f => ({ ...f, certification_name: e.target.value }))}
-                            className="input-field" style={{ width: 200 }} />
+                          <label className="text-xs font-semibold text-gray-500">Certification <span style={{ color: '#ff930c' }}>*</span></label>
+                          <select value={certForm.certification_name}
+                            onChange={e => {
+                              const cert = APPROVED_CERTS.find(c => c.name === e.target.value)
+                              setCertForm(f => ({
+                                ...f,
+                                certification_name: e.target.value,
+                                hourly_raise: cert ? certHourlyRaise(cert.annual).toFixed(4) : '',
+                              }))
+                            }}
+                            className="input-field" style={{ width: 260 }}>
+                            <option value="">— Select certification —</option>
+                            {APPROVED_CERTS.map(c => (
+                              <option key={c.name} value={c.name}>
+                                {c.name} (+${certHourlyRaise(c.annual).toFixed(4)}/hr)
+                              </option>
+                            ))}
+                          </select>
                         </div>
                         <div className="flex flex-col gap-1">
                           <label className="text-xs font-semibold text-gray-500">Expected Month <span style={{ color: '#ff930c' }}>*</span></label>
@@ -2990,10 +3058,10 @@ export default function DashboardPage() {
                           </select>
                         </div>
                         <div className="flex flex-col gap-1">
-                          <label className="text-xs font-semibold text-gray-500">Hourly Raise ($) <span style={{ color: '#ff930c' }}>*</span></label>
-                          <input type="number" step="0.0001" min="0" placeholder="1.0000" value={certForm.hourly_raise}
-                            onChange={e => setCertForm(f => ({ ...f, hourly_raise: e.target.value }))}
-                            className="input-field" style={{ width: 120 }} />
+                          <label className="text-xs font-semibold text-gray-500">Hourly Raise</label>
+                          <input type="text" readOnly value={certForm.hourly_raise ? `$${certForm.hourly_raise}/hr` : '—'}
+                            className="input-field text-gray-500"
+                            style={{ width: 110, background: '#f9fafb', cursor: 'default' }} />
                         </div>
                         <div className="flex flex-col gap-1">
                           <label className="text-xs font-semibold text-gray-500">Notes</label>
