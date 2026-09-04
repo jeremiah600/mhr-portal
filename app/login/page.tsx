@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
@@ -10,6 +10,15 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+
+  // Detect Supabase error hash (e.g. expired reset link redirects back here)
+  useEffect(() => {
+    const hash = window.location.hash
+    if (hash.includes('error=access_denied') || hash.includes('otp_expired')) {
+      setError('That password reset link has expired. Please request a new one using "Forgot password?" below.')
+      window.history.replaceState(null, '', window.location.pathname)
+    }
+  }, [])
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
