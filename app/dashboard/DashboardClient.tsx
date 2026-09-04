@@ -2489,7 +2489,7 @@ export default function DashboardPage() {
                           <table className="min-w-full text-sm">
                             <thead>
                               <tr style={{ background: '#f8fafb' }}>
-                                {['Description','Employee','Vendor','Month','Amount','Notes','Status',''].map(h => (
+                                {['Description','Employee', acct.account_code.startsWith('609') ? 'Client' : 'Vendor','Month','Amount','Notes','Status',''].map(h => (
                                   <th key={h} className="text-left px-3 py-2 text-xs font-bold uppercase tracking-wider"
                                     style={{ color: '#316c7f', whiteSpace: 'nowrap' }}>{h}</th>
                                 ))}
@@ -2612,8 +2612,11 @@ export default function DashboardPage() {
                                   className="input-field" style={{ width: 130 }} />
                               </div>
                               <div className="flex flex-col gap-1">
-                                <label className="text-xs font-semibold text-gray-500">Vendor</label>
-                                <input type="text" placeholder="e.g. Microsoft"
+                                <label className="text-xs font-semibold text-gray-500">
+                                  {acct.account_code.startsWith('609') ? 'Client' : 'Vendor'}
+                                </label>
+                                <input type="text"
+                                  placeholder={acct.account_code.startsWith('609') ? 'e.g. ABC Company' : 'e.g. Microsoft'}
                                   value={addForm.vendor}
                                   onChange={e => setAddForm(f => ({ ...f, vendor: e.target.value }))}
                                   className="input-field" style={{ width: 140 }} />
