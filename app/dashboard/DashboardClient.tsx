@@ -2625,7 +2625,7 @@ export default function DashboardPage() {
             <div className="min-w-[1200px]">
             {/* Column headers — must match accordion row grid exactly */}
             <div className="hidden lg:grid text-xs font-bold uppercase tracking-widest text-gray-400 px-4"
-              style={{ gridTemplateColumns: '280px repeat(12, 72px) 120px 52px' }}>
+              style={{ gridTemplateColumns: '280px repeat(12, 65px) 100px 40px' }}>
               <span>GL / Description</span>
               {MONTH_NAMES.map(m => <span key={m} className="text-right">{m}</span>)}
               <span className="text-right">Total</span>
@@ -2645,7 +2645,7 @@ export default function DashboardPage() {
                   <button onClick={() => toggleExpand(acct.account_code)}
                     className="w-full text-left px-4 py-3 hidden lg:grid items-center transition-colors hover:bg-blue-50/40"
                     style={{
-                      gridTemplateColumns: '280px repeat(12, 72px) 120px 52px',
+                      gridTemplateColumns: '280px repeat(12, 65px) 100px 40px',
                       background: isExpanded ? 'rgba(49,108,127,.05)' : 'white'
                     }}>
                     {/* GL code + description combined in first cell */}
