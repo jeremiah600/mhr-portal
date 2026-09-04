@@ -327,6 +327,9 @@ export default function DashboardPage() {
   const [submittingId, setSubmittingId] = useState<string | null>(null)
   const [approvingId, setApprovingId] = useState<string | null>(null)
   const [togglingWindow, setTogglingWindow] = useState<string | null>(null)
+  const [bulkApprovingItems, setBulkApprovingItems] = useState(false)
+  const [bulkApprovingHires, setBulkApprovingHires] = useState(false)
+  const [bulkApprovingCerts, setBulkApprovingCerts] = useState(false)
 
   // ── Auto-save form to localStorage ────────────────────────────────────────
 
@@ -1221,6 +1224,119 @@ export default function DashboardPage() {
     setActionMsg('✓ Cert raise returned to director.')
   }
 
+  // ── Admin: bulk approve ───────────────────────────────────────────────────
+
+  async function handleBulkApproveItems(deptCode?: string) {
+    const isJeremiah = userEmail === 'jbogdon@myhrpros.com'
+    let targets = pendingItems.filter(item =>
+      isJeremiah ? !item.approved_by_jeremiah : !item.approved_by_joseph
+    )
+    if (deptCode) targets = targets.filter(item => item.dept_code === deptCode)
+    if (targets.length === 0) { setActionMsg('No items left for you to approve.'); return }
+    setBulkApprovingItems(true)
+    const now = new Date().toISOString()
+    const willFinish = targets.filter(item => isJeremiah ? item.approved_by_joseph : item.approved_by_jeremiah)
+    const partialOnly = targets.filter(item => isJeremiah ? !item.approved_by_joseph : !item.approved_by_jeremiah)
+    const errors: string[] = []
+    if (willFinish.length > 0) {
+      const up = isJeremiah
+        ? { approved_by_jeremiah: true, jeremiah_approved_at: now, status: 'approved' as const }
+        : { approved_by_joseph: true, joseph_approved_at: now, status: 'approved' as const }
+      const { error } = await supabase.from('budget_line_items').update(up).in('id', willFinish.map(i => i.id))
+      if (error) errors.push(error.message)
+    }
+    if (partialOnly.length > 0) {
+      const up = isJeremiah
+        ? { approved_by_jeremiah: true, jeremiah_approved_at: now }
+        : { approved_by_joseph: true, joseph_approved_at: now }
+      const { error } = await supabase.from('budget_line_items').update(up).in('id', partialOnly.map(i => i.id))
+      if (error) errors.push(error.message)
+    }
+    if (errors.length > 0) { setActionMsg('Error: ' + errors.join(', ')); setBulkApprovingItems(false); return }
+    const finishedIds = new Set(willFinish.map(i => i.id))
+    const partialIds = new Set(partialOnly.map(i => i.id))
+    setPendingItems(prev => prev
+      .filter(i => !finishedIds.has(i.id))
+      .map(i => partialIds.has(i.id) ? { ...i, ...(isJeremiah ? { approved_by_jeremiah: true, jeremiah_approved_at: now } : { approved_by_joseph: true, joseph_approved_at: now }) } : i)
+    )
+    setActionMsg(`✓ Approved ${targets.length} expense item${targets.length !== 1 ? 's' : ''} (${willFinish.length} fully approved).`)
+    setBulkApprovingItems(false)
+  }
+
+  async function handleBulkApproveHires(deptCode?: string) {
+    const isJeremiah = userEmail === 'jbogdon@myhrpros.com'
+    let targets = pendingHires.filter(hire =>
+      isJeremiah ? !hire.approved_by_jeremiah : !hire.approved_by_joseph
+    )
+    if (deptCode) targets = targets.filter(hire => hire.dept_code === deptCode)
+    if (targets.length === 0) { setActionMsg('No hires left for you to approve.'); return }
+    setBulkApprovingHires(true)
+    const now = new Date().toISOString()
+    const willFinish = targets.filter(hire => isJeremiah ? hire.approved_by_joseph : hire.approved_by_jeremiah)
+    const partialOnly = targets.filter(hire => isJeremiah ? !hire.approved_by_joseph : !hire.approved_by_jeremiah)
+    const errors: string[] = []
+    if (willFinish.length > 0) {
+      const up = isJeremiah
+        ? { approved_by_jeremiah: true, jeremiah_approved_at: now, status: 'approved' as const }
+        : { approved_by_joseph: true, joseph_approved_at: now, status: 'approved' as const }
+      const { error } = await supabase.from('budget_new_hires').update(up).in('id', willFinish.map(h => h.id))
+      if (error) errors.push(error.message)
+    }
+    if (partialOnly.length > 0) {
+      const up = isJeremiah
+        ? { approved_by_jeremiah: true, jeremiah_approved_at: now }
+        : { approved_by_joseph: true, joseph_approved_at: now }
+      const { error } = await supabase.from('budget_new_hires').update(up).in('id', partialOnly.map(h => h.id))
+      if (error) errors.push(error.message)
+    }
+    if (errors.length > 0) { setActionMsg('Error: ' + errors.join(', ')); setBulkApprovingHires(false); return }
+    const finishedIds = new Set(willFinish.map(h => h.id))
+    const partialIds = new Set(partialOnly.map(h => h.id))
+    setPendingHires(prev => prev
+      .filter(h => !finishedIds.has(h.id))
+      .map(h => partialIds.has(h.id) ? { ...h, ...(isJeremiah ? { approved_by_jeremiah: true, jeremiah_approved_at: now } : { approved_by_joseph: true, joseph_approved_at: now }) } : h)
+    )
+    setActionMsg(`✓ Approved ${targets.length} new hire${targets.length !== 1 ? 's' : ''} (${willFinish.length} fully approved).`)
+    setBulkApprovingHires(false)
+  }
+
+  async function handleBulkApproveCerts(deptCode?: string) {
+    const isJeremiah = userEmail === 'jbogdon@myhrpros.com'
+    let targets = pendingCerts.filter(cert =>
+      isJeremiah ? !cert.approved_by_jeremiah : !cert.approved_by_joseph
+    )
+    if (deptCode) targets = targets.filter(cert => cert.dept_code === deptCode)
+    if (targets.length === 0) { setActionMsg('No cert raises left for you to approve.'); return }
+    setBulkApprovingCerts(true)
+    const now = new Date().toISOString()
+    const willFinish = targets.filter(cert => isJeremiah ? cert.approved_by_joseph : cert.approved_by_jeremiah)
+    const partialOnly = targets.filter(cert => isJeremiah ? !cert.approved_by_joseph : !cert.approved_by_jeremiah)
+    const errors: string[] = []
+    if (willFinish.length > 0) {
+      const up = isJeremiah
+        ? { approved_by_jeremiah: true, jeremiah_approved_at: now, status: 'approved' as const }
+        : { approved_by_joseph: true, joseph_approved_at: now, status: 'approved' as const }
+      const { error } = await supabase.from('budget_cert_raises').update(up).in('id', willFinish.map(c => c.id))
+      if (error) errors.push(error.message)
+    }
+    if (partialOnly.length > 0) {
+      const up = isJeremiah
+        ? { approved_by_jeremiah: true, jeremiah_approved_at: now }
+        : { approved_by_joseph: true, joseph_approved_at: now }
+      const { error } = await supabase.from('budget_cert_raises').update(up).in('id', partialOnly.map(c => c.id))
+      if (error) errors.push(error.message)
+    }
+    if (errors.length > 0) { setActionMsg('Error: ' + errors.join(', ')); setBulkApprovingCerts(false); return }
+    const finishedIds = new Set(willFinish.map(c => c.id))
+    const partialIds = new Set(partialOnly.map(c => c.id))
+    setPendingCerts(prev => prev
+      .filter(c => !finishedIds.has(c.id))
+      .map(c => partialIds.has(c.id) ? { ...c, ...(isJeremiah ? { approved_by_jeremiah: true, jeremiah_approved_at: now } : { approved_by_joseph: true, joseph_approved_at: now }) } : c)
+    )
+    setActionMsg(`✓ Approved ${targets.length} cert raise${targets.length !== 1 ? 's' : ''} (${willFinish.length} fully approved).`)
+    setBulkApprovingCerts(false)
+  }
+
   // ── Admin: toggle submission window ──────────────────────────────────────
 
   async function handleToggleWindow(deptCode: string | null, open: boolean) {
@@ -1914,282 +2030,393 @@ export default function DashboardPage() {
 
         {/* ── Pending approvals ── */}
         <div>
-          <div className="flex items-center gap-2 mb-3">
-            <h3 className="font-extrabold text-sm uppercase tracking-widest" style={{ color: '#1e4757' }}>
-              Pending Expense Approvals
-            </h3>
-            {pendingItems.length > 0 && (
-              <span className="text-xs font-bold px-2 py-0.5 rounded-full"
-                style={{ background: '#ff930c', color: '#fff' }}>{pendingItems.length}</span>
-            )}
-          </div>
-
-          {pendingItems.length === 0 ? (
-            <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-400 text-sm">
-              No expense items pending approval.
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {pendingItems.map(item => {
-                const isJeremiah = userEmail === 'jbogdon@myhrpros.com'
-                const isJoseph = userEmail === 'joseph@myhrpros.com'
-                const myApproved = isJeremiah ? item.approved_by_jeremiah : item.approved_by_joseph
-                const busy = approvingId === item.id || returningId === item.id
-                return (
-                  <div key={item.id} className="bg-white rounded-lg border shadow-sm overflow-hidden"
-                    style={{ borderColor: '#e5e7eb' }}>
-                    <div className="px-4 py-3 flex flex-wrap items-start gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-semibold text-gray-800">{item.description}</span>
-                          <span className="text-xs font-mono text-gray-400">{item.account_code}</span>
-                          <span className="text-xs px-2 py-0.5 rounded font-semibold"
-                            style={{ background: 'rgba(49,108,127,.1)', color: '#316c7f' }}>
-                            {deptNames[item.dept_code] ?? item.dept_code}
-                          </span>
-                        </div>
-                        <div className="mt-1 flex items-center gap-4 text-xs text-gray-500">
-                          <span>{MONTH_NAMES[item.month - 1]} 2027</span>
-                          <span className="font-semibold" style={{ color: '#316c7f', fontVariantNumeric: 'tabular-nums' }}>
-                            ${item.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </span>
-                          {item.employee_name && <span>👤 {item.employee_name}</span>}
-                          {item.vendor && <span>🏢 {item.vendor}</span>}
-                        </div>
-                        <div className="mt-1.5 flex items-center gap-3 text-xs">
-                          <span style={{ color: item.approved_by_jeremiah ? '#059669' : '#d1d5db' }}>
-                            {item.approved_by_jeremiah ? '✓' : '⏳'} Jeremiah
-                          </span>
-                          <span style={{ color: item.approved_by_joseph ? '#059669' : '#d1d5db' }}>
-                            {item.approved_by_joseph ? '✓' : '⏳'} Joseph
-                          </span>
-                        </div>
-                      </div>
-                      <div className="flex flex-col gap-2 items-end">
-                        {!myApproved && (
-                          <button onClick={() => handleApproveItem(item)} disabled={busy}
-                            className="btn-primary text-xs px-3 py-1.5 whitespace-nowrap">
-                            {busy ? '…' : '✓ Approve'}
-                          </button>
-                        )}
-                        {myApproved && (
-                          <span className="text-xs font-semibold" style={{ color: '#059669' }}>✓ You approved</span>
-                        )}
-                        <button
-                          onClick={() => setReturningId(returningId === item.id ? null : item.id)}
-                          disabled={busy}
-                          className="text-xs font-semibold px-3 py-1.5 rounded transition-colors whitespace-nowrap"
-                          style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa' }}>
-                          ↩ Return
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Return comment box */}
-                    {returningId === item.id && (
-                      <div className="px-4 py-3 flex gap-2 items-center" style={{ borderTop: '1px solid #fee2e2', background: '#fff7f7' }}>
-                        <input
-                          type="text"
-                          placeholder="Reason for returning…"
-                          value={returnComment[item.id] ?? ''}
-                          onChange={e => setReturnComment(c => ({ ...c, [item.id]: e.target.value }))}
-                          className="input-field flex-1 text-sm"
-                        />
-                        <button onClick={() => handleReturnItem(item)}
-                          disabled={!returnComment[item.id]?.trim()}
-                          className="text-xs font-bold px-3 py-1.5 rounded whitespace-nowrap"
-                          style={{ background: '#dc2626', color: '#fff', opacity: !returnComment[item.id]?.trim() ? 0.5 : 1 }}>
-                          Send Return
-                        </button>
-                        <button onClick={() => setReturningId(null)}
-                          className="text-xs text-gray-400 px-2 py-1.5">Cancel</button>
-                      </div>
-                    )}
+          {(() => {
+            const isJeremiah = userEmail === 'jbogdon@myhrpros.com'
+            const myPendingItems = pendingItems.filter(item => isJeremiah ? !item.approved_by_jeremiah : !item.approved_by_joseph)
+            const deptGroups = Array.from(new Set(pendingItems.map(i => i.dept_code)))
+              .sort((a, b) => (deptNames[a] ?? a).localeCompare(deptNames[b] ?? b))
+            return (
+              <>
+                <div className="flex items-center gap-2 mb-3 flex-wrap">
+                  <h3 className="font-extrabold text-sm uppercase tracking-widest" style={{ color: '#1e4757' }}>
+                    Pending Expense Approvals
+                  </h3>
+                  {pendingItems.length > 0 && (
+                    <span className="text-xs font-bold px-2 py-0.5 rounded-full"
+                      style={{ background: '#ff930c', color: '#fff' }}>{pendingItems.length}</span>
+                  )}
+                  {myPendingItems.length > 0 && (
+                    <button
+                      onClick={() => handleBulkApproveItems()}
+                      disabled={bulkApprovingItems}
+                      className="ml-auto text-xs font-bold px-3 py-1.5 rounded whitespace-nowrap"
+                      style={{ background: '#1e4757', color: '#fff', opacity: bulkApprovingItems ? 0.6 : 1 }}>
+                      {bulkApprovingItems ? '…' : `✓ Approve All (${myPendingItems.length})`}
+                    </button>
+                  )}
+                </div>
+                {pendingItems.length === 0 ? (
+                  <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-400 text-sm">
+                    No expense items pending approval.
                   </div>
-                )
-              })}
-            </div>
-          )}
+                ) : (
+                  <div className="space-y-5">
+                    {deptGroups.map(deptCode => {
+                      const deptItems = pendingItems.filter(i => i.dept_code === deptCode)
+                      const myDeptPending = deptItems.filter(item => isJeremiah ? !item.approved_by_jeremiah : !item.approved_by_joseph)
+                      return (
+                        <div key={deptCode}>
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="text-xs font-bold uppercase tracking-wider" style={{ color: '#316c7f' }}>
+                              {deptNames[deptCode] ?? deptCode}
+                            </span>
+                            <span className="text-xs text-gray-400">({deptItems.length})</span>
+                            {myDeptPending.length > 0 && (
+                              <button
+                                onClick={() => handleBulkApproveItems(deptCode)}
+                                disabled={bulkApprovingItems}
+                                className="text-xs font-semibold px-2.5 py-1 rounded whitespace-nowrap"
+                                style={{ background: 'rgba(30,71,87,.1)', color: '#1e4757', border: '1px solid rgba(30,71,87,.2)' }}>
+                                ✓ Approve Dept ({myDeptPending.length})
+                              </button>
+                            )}
+                          </div>
+                          <div className="space-y-3">
+                            {deptItems.map(item => {
+                              const myApproved = isJeremiah ? item.approved_by_jeremiah : item.approved_by_joseph
+                              const busy = approvingId === item.id || returningId === item.id
+                              return (
+                                <div key={item.id} className="bg-white rounded-lg border shadow-sm overflow-hidden"
+                                  style={{ borderColor: '#e5e7eb' }}>
+                                  <div className="px-4 py-3 flex flex-wrap items-start gap-3">
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="font-semibold text-gray-800">{item.description}</span>
+                                        <span className="text-xs font-mono text-gray-400">{item.account_code}</span>
+                                      </div>
+                                      <div className="mt-1 flex items-center gap-4 text-xs text-gray-500">
+                                        <span>{MONTH_NAMES[item.month - 1]} 2027</span>
+                                        <span className="font-semibold" style={{ color: '#316c7f', fontVariantNumeric: 'tabular-nums' }}>
+                                          ${item.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </span>
+                                        {item.employee_name && <span>👤 {item.employee_name}</span>}
+                                        {item.vendor && <span>🏢 {item.vendor}</span>}
+                                      </div>
+                                      <div className="mt-1.5 flex items-center gap-3 text-xs">
+                                        <span style={{ color: item.approved_by_jeremiah ? '#059669' : '#d1d5db' }}>
+                                          {item.approved_by_jeremiah ? '✓' : '⏳'} Jeremiah
+                                        </span>
+                                        <span style={{ color: item.approved_by_joseph ? '#059669' : '#d1d5db' }}>
+                                          {item.approved_by_joseph ? '✓' : '⏳'} Joseph
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <div className="flex flex-col gap-2 items-end">
+                                      {!myApproved && (
+                                        <button onClick={() => handleApproveItem(item)} disabled={busy}
+                                          className="btn-primary text-xs px-3 py-1.5 whitespace-nowrap">
+                                          {busy ? '…' : '✓ Approve'}
+                                        </button>
+                                      )}
+                                      {myApproved && (
+                                        <span className="text-xs font-semibold" style={{ color: '#059669' }}>✓ You approved</span>
+                                      )}
+                                      <button
+                                        onClick={() => setReturningId(returningId === item.id ? null : item.id)}
+                                        disabled={busy}
+                                        className="text-xs font-semibold px-3 py-1.5 rounded transition-colors whitespace-nowrap"
+                                        style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa' }}>
+                                        ↩ Return
+                                      </button>
+                                    </div>
+                                  </div>
+                                  {returningId === item.id && (
+                                    <div className="px-4 py-3 flex gap-2 items-center" style={{ borderTop: '1px solid #fee2e2', background: '#fff7f7' }}>
+                                      <input
+                                        type="text"
+                                        placeholder="Reason for returning…"
+                                        value={returnComment[item.id] ?? ''}
+                                        onChange={e => setReturnComment(c => ({ ...c, [item.id]: e.target.value }))}
+                                        className="input-field flex-1 text-sm"
+                                      />
+                                      <button onClick={() => handleReturnItem(item)}
+                                        disabled={!returnComment[item.id]?.trim()}
+                                        className="text-xs font-bold px-3 py-1.5 rounded whitespace-nowrap"
+                                        style={{ background: '#dc2626', color: '#fff', opacity: !returnComment[item.id]?.trim() ? 0.5 : 1 }}>
+                                        Send Return
+                                      </button>
+                                      <button onClick={() => setReturningId(null)}
+                                        className="text-xs text-gray-400 px-2 py-1.5">Cancel</button>
+                                    </div>
+                                  )}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </>
+            )
+          })()}
         </div>
 
         {/* ── Pending new hire approvals ── */}
         <div>
-          <div className="flex items-center gap-2 mb-3">
-            <h3 className="font-extrabold text-sm uppercase tracking-widest" style={{ color: '#1e4757' }}>
-              Pending New Hire Approvals
-            </h3>
-            {pendingHires.length > 0 && (
-              <span className="text-xs font-bold px-2 py-0.5 rounded-full"
-                style={{ background: '#ff930c', color: '#fff' }}>{pendingHires.length}</span>
-            )}
-          </div>
-          {pendingHires.length === 0 ? (
-            <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-400 text-sm">
-              No new hire plans pending approval.
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {pendingHires.map(hire => {
-                const isJeremiah = userEmail === 'jbogdon@myhrpros.com'
-                const isJoseph = userEmail === 'joseph@myhrpros.com'
-                const myApproved = isJeremiah ? hire.approved_by_jeremiah : hire.approved_by_joseph
-                const busy = hireApprovingId === hire.id || hireReturningId === hire.id
-                return (
-                  <div key={hire.id} className="bg-white rounded-lg border shadow-sm overflow-hidden"
-                    style={{ borderColor: '#e5e7eb' }}>
-                    <div className="px-4 py-3 flex flex-wrap items-start gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-semibold text-gray-800">{hire.position_title}</span>
-                          <span className="text-xs text-gray-400">({hire.anticipated_name})</span>
-                          <span className="text-xs px-2 py-0.5 rounded font-semibold"
-                            style={{ background: 'rgba(49,108,127,.1)', color: '#316c7f' }}>
-                            {deptNames[hire.dept_code] ?? hire.dept_code}
-                          </span>
-                        </div>
-                        <div className="mt-1 flex items-center gap-4 text-xs text-gray-500">
-                          <span>Start: {MONTH_NAMES[hire.start_month - 1]} 2027</span>
-                          <span className="font-semibold" style={{ color: '#316c7f', fontVariantNumeric: 'tabular-nums' }}>
-                            ${hire.annual_pay.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / yr
-                          </span>
-                          {hire.benefits_plan && <span>🏥 {hire.benefits_plan}</span>}
-                        </div>
-                        <div className="mt-1.5 flex items-center gap-3 text-xs">
-                          <span style={{ color: hire.approved_by_jeremiah ? '#059669' : '#d1d5db' }}>
-                            {hire.approved_by_jeremiah ? '✓' : '⏳'} Jeremiah
-                          </span>
-                          <span style={{ color: hire.approved_by_joseph ? '#059669' : '#d1d5db' }}>
-                            {hire.approved_by_joseph ? '✓' : '⏳'} Joseph
-                          </span>
-                        </div>
-                      </div>
-                      <div className="flex flex-col gap-2 items-end">
-                        {!myApproved && (
-                          <button onClick={() => handleApproveHire(hire)} disabled={busy}
-                            className="btn-primary text-xs px-3 py-1.5 whitespace-nowrap">
-                            {busy ? '…' : '✓ Approve'}
-                          </button>
-                        )}
-                        {myApproved && <span className="text-xs font-semibold" style={{ color: '#059669' }}>✓ You approved</span>}
-                        <button
-                          onClick={() => setHireReturningId(hireReturningId === hire.id ? null : hire.id)}
-                          disabled={busy}
-                          className="text-xs font-semibold px-3 py-1.5 rounded transition-colors whitespace-nowrap"
-                          style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa' }}>
-                          ↩ Return
-                        </button>
-                      </div>
-                    </div>
-                    {hireReturningId === hire.id && (
-                      <div className="px-4 py-3 flex gap-2 items-center" style={{ borderTop: '1px solid #fee2e2', background: '#fff7f7' }}>
-                        <input type="text" placeholder="Reason for returning…"
-                          value={hireReturnComment[hire.id] ?? ''}
-                          onChange={e => setHireReturnComment(c => ({ ...c, [hire.id]: e.target.value }))}
-                          className="input-field flex-1 text-sm" />
-                        <button onClick={() => handleReturnHire(hire)}
-                          disabled={!hireReturnComment[hire.id]?.trim()}
-                          className="text-xs font-bold px-3 py-1.5 rounded whitespace-nowrap"
-                          style={{ background: '#dc2626', color: '#fff', opacity: !hireReturnComment[hire.id]?.trim() ? 0.5 : 1 }}>
-                          Send Return
-                        </button>
-                        <button onClick={() => setHireReturningId(null)} className="text-xs text-gray-400 px-2 py-1.5">Cancel</button>
-                      </div>
-                    )}
+          {(() => {
+            const isJeremiah = userEmail === 'jbogdon@myhrpros.com'
+            const myPendingHires = pendingHires.filter(hire => isJeremiah ? !hire.approved_by_jeremiah : !hire.approved_by_joseph)
+            const deptGroups = Array.from(new Set(pendingHires.map(h => h.dept_code)))
+              .sort((a, b) => (deptNames[a] ?? a).localeCompare(deptNames[b] ?? b))
+            return (
+              <>
+                <div className="flex items-center gap-2 mb-3 flex-wrap">
+                  <h3 className="font-extrabold text-sm uppercase tracking-widest" style={{ color: '#1e4757' }}>
+                    Pending New Hire Approvals
+                  </h3>
+                  {pendingHires.length > 0 && (
+                    <span className="text-xs font-bold px-2 py-0.5 rounded-full"
+                      style={{ background: '#ff930c', color: '#fff' }}>{pendingHires.length}</span>
+                  )}
+                  {myPendingHires.length > 0 && (
+                    <button
+                      onClick={() => handleBulkApproveHires()}
+                      disabled={bulkApprovingHires}
+                      className="ml-auto text-xs font-bold px-3 py-1.5 rounded whitespace-nowrap"
+                      style={{ background: '#1e4757', color: '#fff', opacity: bulkApprovingHires ? 0.6 : 1 }}>
+                      {bulkApprovingHires ? '…' : `✓ Approve All (${myPendingHires.length})`}
+                    </button>
+                  )}
+                </div>
+                {pendingHires.length === 0 ? (
+                  <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-400 text-sm">
+                    No new hire plans pending approval.
                   </div>
-                )
-              })}
-            </div>
-          )}
+                ) : (
+                  <div className="space-y-5">
+                    {deptGroups.map(deptCode => {
+                      const deptHires = pendingHires.filter(h => h.dept_code === deptCode)
+                      const myDeptPending = deptHires.filter(hire => isJeremiah ? !hire.approved_by_jeremiah : !hire.approved_by_joseph)
+                      return (
+                        <div key={deptCode}>
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="text-xs font-bold uppercase tracking-wider" style={{ color: '#316c7f' }}>
+                              {deptNames[deptCode] ?? deptCode}
+                            </span>
+                            <span className="text-xs text-gray-400">({deptHires.length})</span>
+                            {myDeptPending.length > 0 && (
+                              <button
+                                onClick={() => handleBulkApproveHires(deptCode)}
+                                disabled={bulkApprovingHires}
+                                className="text-xs font-semibold px-2.5 py-1 rounded whitespace-nowrap"
+                                style={{ background: 'rgba(30,71,87,.1)', color: '#1e4757', border: '1px solid rgba(30,71,87,.2)' }}>
+                                ✓ Approve Dept ({myDeptPending.length})
+                              </button>
+                            )}
+                          </div>
+                          <div className="space-y-3">
+                            {deptHires.map(hire => {
+                              const myApproved = isJeremiah ? hire.approved_by_jeremiah : hire.approved_by_joseph
+                              const busy = hireApprovingId === hire.id || hireReturningId === hire.id
+                              return (
+                                <div key={hire.id} className="bg-white rounded-lg border shadow-sm overflow-hidden"
+                                  style={{ borderColor: '#e5e7eb' }}>
+                                  <div className="px-4 py-3 flex flex-wrap items-start gap-3">
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="font-semibold text-gray-800">{hire.position_title}</span>
+                                        <span className="text-xs text-gray-400">({hire.anticipated_name})</span>
+                                      </div>
+                                      <div className="mt-1 flex items-center gap-4 text-xs text-gray-500">
+                                        <span>Start: {MONTH_NAMES[hire.start_month - 1]} 2027</span>
+                                        <span className="font-semibold" style={{ color: '#316c7f', fontVariantNumeric: 'tabular-nums' }}>
+                                          ${hire.annual_pay.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / yr
+                                        </span>
+                                        {hire.benefits_plan && <span>🏥 {hire.benefits_plan}</span>}
+                                      </div>
+                                      <div className="mt-1.5 flex items-center gap-3 text-xs">
+                                        <span style={{ color: hire.approved_by_jeremiah ? '#059669' : '#d1d5db' }}>
+                                          {hire.approved_by_jeremiah ? '✓' : '⏳'} Jeremiah
+                                        </span>
+                                        <span style={{ color: hire.approved_by_joseph ? '#059669' : '#d1d5db' }}>
+                                          {hire.approved_by_joseph ? '✓' : '⏳'} Joseph
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <div className="flex flex-col gap-2 items-end">
+                                      {!myApproved && (
+                                        <button onClick={() => handleApproveHire(hire)} disabled={busy}
+                                          className="btn-primary text-xs px-3 py-1.5 whitespace-nowrap">
+                                          {busy ? '…' : '✓ Approve'}
+                                        </button>
+                                      )}
+                                      {myApproved && <span className="text-xs font-semibold" style={{ color: '#059669' }}>✓ You approved</span>}
+                                      <button
+                                        onClick={() => setHireReturningId(hireReturningId === hire.id ? null : hire.id)}
+                                        disabled={busy}
+                                        className="text-xs font-semibold px-3 py-1.5 rounded transition-colors whitespace-nowrap"
+                                        style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa' }}>
+                                        ↩ Return
+                                      </button>
+                                    </div>
+                                  </div>
+                                  {hireReturningId === hire.id && (
+                                    <div className="px-4 py-3 flex gap-2 items-center" style={{ borderTop: '1px solid #fee2e2', background: '#fff7f7' }}>
+                                      <input type="text" placeholder="Reason for returning…"
+                                        value={hireReturnComment[hire.id] ?? ''}
+                                        onChange={e => setHireReturnComment(c => ({ ...c, [hire.id]: e.target.value }))}
+                                        className="input-field flex-1 text-sm" />
+                                      <button onClick={() => handleReturnHire(hire)}
+                                        disabled={!hireReturnComment[hire.id]?.trim()}
+                                        className="text-xs font-bold px-3 py-1.5 rounded whitespace-nowrap"
+                                        style={{ background: '#dc2626', color: '#fff', opacity: !hireReturnComment[hire.id]?.trim() ? 0.5 : 1 }}>
+                                        Send Return
+                                      </button>
+                                      <button onClick={() => setHireReturningId(null)} className="text-xs text-gray-400 px-2 py-1.5">Cancel</button>
+                                    </div>
+                                  )}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </>
+            )
+          })()}
         </div>
 
         {/* ── Pending cert raise approvals ── */}
         <div>
-          <div className="flex items-center gap-2 mb-3">
-            <h3 className="font-extrabold text-sm uppercase tracking-widest" style={{ color: '#1e4757' }}>
-              Pending Cert Raise Approvals
-            </h3>
-            {pendingCerts.length > 0 && (
-              <span className="text-xs font-bold px-2 py-0.5 rounded-full"
-                style={{ background: '#ff930c', color: '#fff' }}>{pendingCerts.length}</span>
-            )}
-          </div>
-          {pendingCerts.length === 0 ? (
-            <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-400 text-sm">
-              No cert raise requests pending approval.
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {pendingCerts.map(cert => {
-                const isJeremiah = userEmail === 'jbogdon@myhrpros.com'
-                const isJoseph = userEmail === 'joseph@myhrpros.com'
-                const myApproved = isJeremiah ? cert.approved_by_jeremiah : cert.approved_by_joseph
-                const busy = certApprovingId === cert.id || certReturningId === cert.id
-                return (
-                  <div key={cert.id} className="bg-white rounded-lg border shadow-sm overflow-hidden"
-                    style={{ borderColor: '#e5e7eb' }}>
-                    <div className="px-4 py-3 flex flex-wrap items-start gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-semibold text-gray-800">{cert.employee_name}</span>
-                          {cert.ee_id && <span className="font-mono text-xs text-gray-400">{cert.ee_id}</span>}
-                          <span className="text-xs px-2 py-0.5 rounded font-semibold"
-                            style={{ background: 'rgba(49,108,127,.1)', color: '#316c7f' }}>
-                            {deptNames[cert.dept_code] ?? cert.dept_code}
-                          </span>
-                        </div>
-                        <div className="mt-1 flex items-center gap-4 text-xs text-gray-500">
-                          <span>🎓 {cert.certification_name}</span>
-                          <span>Expected: {MONTH_NAMES[cert.expected_month - 1]} 2027</span>
-                          <span className="font-semibold" style={{ color: '#316c7f', fontVariantNumeric: 'tabular-nums' }}>
-                            +${cert.hourly_raise.toFixed(4)}/hr
-                          </span>
-                        </div>
-                        <div className="mt-1.5 flex items-center gap-3 text-xs">
-                          <span style={{ color: cert.approved_by_jeremiah ? '#059669' : '#d1d5db' }}>
-                            {cert.approved_by_jeremiah ? '✓' : '⏳'} Jeremiah
-                          </span>
-                          <span style={{ color: cert.approved_by_joseph ? '#059669' : '#d1d5db' }}>
-                            {cert.approved_by_joseph ? '✓' : '⏳'} Joseph
-                          </span>
-                        </div>
-                      </div>
-                      <div className="flex flex-col gap-2 items-end">
-                        {!myApproved && (
-                          <button onClick={() => handleApproveCert(cert)} disabled={busy}
-                            className="btn-primary text-xs px-3 py-1.5 whitespace-nowrap">
-                            {busy ? '…' : '✓ Approve'}
-                          </button>
-                        )}
-                        {myApproved && <span className="text-xs font-semibold" style={{ color: '#059669' }}>✓ You approved</span>}
-                        <button
-                          onClick={() => setCertReturningId(certReturningId === cert.id ? null : cert.id)}
-                          disabled={busy}
-                          className="text-xs font-semibold px-3 py-1.5 rounded transition-colors whitespace-nowrap"
-                          style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa' }}>
-                          ↩ Return
-                        </button>
-                      </div>
-                    </div>
-                    {certReturningId === cert.id && (
-                      <div className="px-4 py-3 flex gap-2 items-center" style={{ borderTop: '1px solid #fee2e2', background: '#fff7f7' }}>
-                        <input type="text" placeholder="Reason for returning…"
-                          value={certReturnComment[cert.id] ?? ''}
-                          onChange={e => setCertReturnComment(c => ({ ...c, [cert.id]: e.target.value }))}
-                          className="input-field flex-1 text-sm" />
-                        <button onClick={() => handleReturnCert(cert)}
-                          disabled={!certReturnComment[cert.id]?.trim()}
-                          className="text-xs font-bold px-3 py-1.5 rounded whitespace-nowrap"
-                          style={{ background: '#dc2626', color: '#fff', opacity: !certReturnComment[cert.id]?.trim() ? 0.5 : 1 }}>
-                          Send Return
-                        </button>
-                        <button onClick={() => setCertReturningId(null)} className="text-xs text-gray-400 px-2 py-1.5">Cancel</button>
-                      </div>
-                    )}
+          {(() => {
+            const isJeremiah = userEmail === 'jbogdon@myhrpros.com'
+            const myPendingCerts = pendingCerts.filter(cert => isJeremiah ? !cert.approved_by_jeremiah : !cert.approved_by_joseph)
+            const deptGroups = Array.from(new Set(pendingCerts.map(c => c.dept_code)))
+              .sort((a, b) => (deptNames[a] ?? a).localeCompare(deptNames[b] ?? b))
+            return (
+              <>
+                <div className="flex items-center gap-2 mb-3 flex-wrap">
+                  <h3 className="font-extrabold text-sm uppercase tracking-widest" style={{ color: '#1e4757' }}>
+                    Pending Cert Raise Approvals
+                  </h3>
+                  {pendingCerts.length > 0 && (
+                    <span className="text-xs font-bold px-2 py-0.5 rounded-full"
+                      style={{ background: '#ff930c', color: '#fff' }}>{pendingCerts.length}</span>
+                  )}
+                  {myPendingCerts.length > 0 && (
+                    <button
+                      onClick={() => handleBulkApproveCerts()}
+                      disabled={bulkApprovingCerts}
+                      className="ml-auto text-xs font-bold px-3 py-1.5 rounded whitespace-nowrap"
+                      style={{ background: '#1e4757', color: '#fff', opacity: bulkApprovingCerts ? 0.6 : 1 }}>
+                      {bulkApprovingCerts ? '…' : `✓ Approve All (${myPendingCerts.length})`}
+                    </button>
+                  )}
+                </div>
+                {pendingCerts.length === 0 ? (
+                  <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-400 text-sm">
+                    No cert raise requests pending approval.
                   </div>
-                )
-              })}
-            </div>
-          )}
+                ) : (
+                  <div className="space-y-5">
+                    {deptGroups.map(deptCode => {
+                      const deptCerts = pendingCerts.filter(c => c.dept_code === deptCode)
+                      const myDeptPending = deptCerts.filter(cert => isJeremiah ? !cert.approved_by_jeremiah : !cert.approved_by_joseph)
+                      return (
+                        <div key={deptCode}>
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="text-xs font-bold uppercase tracking-wider" style={{ color: '#316c7f' }}>
+                              {deptNames[deptCode] ?? deptCode}
+                            </span>
+                            <span className="text-xs text-gray-400">({deptCerts.length})</span>
+                            {myDeptPending.length > 0 && (
+                              <button
+                                onClick={() => handleBulkApproveCerts(deptCode)}
+                                disabled={bulkApprovingCerts}
+                                className="text-xs font-semibold px-2.5 py-1 rounded whitespace-nowrap"
+                                style={{ background: 'rgba(30,71,87,.1)', color: '#1e4757', border: '1px solid rgba(30,71,87,.2)' }}>
+                                ✓ Approve Dept ({myDeptPending.length})
+                              </button>
+                            )}
+                          </div>
+                          <div className="space-y-3">
+                            {deptCerts.map(cert => {
+                              const myApproved = isJeremiah ? cert.approved_by_jeremiah : cert.approved_by_joseph
+                              const busy = certApprovingId === cert.id || certReturningId === cert.id
+                              return (
+                                <div key={cert.id} className="bg-white rounded-lg border shadow-sm overflow-hidden"
+                                  style={{ borderColor: '#e5e7eb' }}>
+                                  <div className="px-4 py-3 flex flex-wrap items-start gap-3">
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="font-semibold text-gray-800">{cert.employee_name}</span>
+                                        {cert.ee_id && <span className="font-mono text-xs text-gray-400">{cert.ee_id}</span>}
+                                      </div>
+                                      <div className="mt-1 flex items-center gap-4 text-xs text-gray-500">
+                                        <span>🎓 {cert.certification_name}</span>
+                                        <span>Expected: {MONTH_NAMES[cert.expected_month - 1]} 2027</span>
+                                        <span className="font-semibold" style={{ color: '#316c7f', fontVariantNumeric: 'tabular-nums' }}>
+                                          +${cert.hourly_raise.toFixed(4)}/hr
+                                        </span>
+                                      </div>
+                                      <div className="mt-1.5 flex items-center gap-3 text-xs">
+                                        <span style={{ color: cert.approved_by_jeremiah ? '#059669' : '#d1d5db' }}>
+                                          {cert.approved_by_jeremiah ? '✓' : '⏳'} Jeremiah
+                                        </span>
+                                        <span style={{ color: cert.approved_by_joseph ? '#059669' : '#d1d5db' }}>
+                                          {cert.approved_by_joseph ? '✓' : '⏳'} Joseph
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <div className="flex flex-col gap-2 items-end">
+                                      {!myApproved && (
+                                        <button onClick={() => handleApproveCert(cert)} disabled={busy}
+                                          className="btn-primary text-xs px-3 py-1.5 whitespace-nowrap">
+                                          {busy ? '…' : '✓ Approve'}
+                                        </button>
+                                      )}
+                                      {myApproved && <span className="text-xs font-semibold" style={{ color: '#059669' }}>✓ You approved</span>}
+                                      <button
+                                        onClick={() => setCertReturningId(certReturningId === cert.id ? null : cert.id)}
+                                        disabled={busy}
+                                        className="text-xs font-semibold px-3 py-1.5 rounded transition-colors whitespace-nowrap"
+                                        style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa' }}>
+                                        ↩ Return
+                                      </button>
+                                    </div>
+                                  </div>
+                                  {certReturningId === cert.id && (
+                                    <div className="px-4 py-3 flex gap-2 items-center" style={{ borderTop: '1px solid #fee2e2', background: '#fff7f7' }}>
+                                      <input type="text" placeholder="Reason for returning…"
+                                        value={certReturnComment[cert.id] ?? ''}
+                                        onChange={e => setCertReturnComment(c => ({ ...c, [cert.id]: e.target.value }))}
+                                        className="input-field flex-1 text-sm" />
+                                      <button onClick={() => handleReturnCert(cert)}
+                                        disabled={!certReturnComment[cert.id]?.trim()}
+                                        className="text-xs font-bold px-3 py-1.5 rounded whitespace-nowrap"
+                                        style={{ background: '#dc2626', color: '#fff', opacity: !certReturnComment[cert.id]?.trim() ? 0.5 : 1 }}>
+                                        Send Return
+                                      </button>
+                                      <button onClick={() => setCertReturningId(null)} className="text-xs text-gray-400 px-2 py-1.5">Cancel</button>
+                                    </div>
+                                  )}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </>
+            )
+          })()}
         </div>
       </div>
     )
