@@ -1379,6 +1379,14 @@ export default function DashboardPage() {
     setMktSaving(false)
   }
 
+  async function handleMktUnsubmit(id: string) {
+    const { error } = await supabase.from('marketing_budget_items')
+      .update({ status: 'draft', submitted_at: null }).eq('id', id)
+    if (error) { setActionMsg('Error: ' + error.message); return }
+    await loadMarketingData()
+    setActionMsg('✓ Item recalled to draft')
+  }
+
   async function handleMktSubmitOne(id: string) {
     setMktSubmittingId(id)
     await supabase.from('marketing_budget_items').update({ status: 'submitted', submitted_at: new Date().toISOString() }).eq('id', id)
@@ -1677,6 +1685,7 @@ export default function DashboardPage() {
                                         )}
                                       </div>
                                     )}
+                                    {/* Draft / Returned — submit + delete */}
                                     {(item.status === 'draft' || item.status === 'returned') && (
                                       <div className="flex items-center gap-2">
                                         {windowOpen && (
@@ -1690,6 +1699,18 @@ export default function DashboardPage() {
                                           className="text-xs text-gray-400 hover:text-red-500 transition-colors"
                                           style={{ background: 'none', border: 'none', cursor: 'pointer' }}>✕ Delete</button>
                                       </div>
+                                    )}
+                                    {/* Submitted — unsubmit (recall before approval) */}
+                                    {item.status === 'submitted' && (
+                                      <button onClick={() => handleMktUnsubmit(item.id)}
+                                        className="text-xs text-gray-400 hover:text-amber-600 transition-colors"
+                                        style={{ background: 'none', border: 'none', cursor: 'pointer' }}>↩ Unsubmit</button>
+                                    )}
+                                    {/* Approved — admin-only delete */}
+                                    {item.status === 'approved' && isAdmin && (
+                                      <button onClick={() => handleMktDelete(item.id)}
+                                        className="text-xs text-gray-400 hover:text-red-500 transition-colors"
+                                        style={{ background: 'none', border: 'none', cursor: 'pointer' }}>✕ Remove</button>
                                     )}
                                   </td>
                                 </tr>
@@ -2218,9 +2239,11 @@ export default function DashboardPage() {
               <div className="flex items-center gap-2">
                 <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Department:</label>
                 <select value={activeDept} onChange={e => setActiveDept(e.target.value)} className="input-field w-auto">
-                  {Object.entries(deptNames).map(([code, name]) => (
-                    <option key={code} value={code}>{name} ({code})</option>
-                  ))}
+                  {Object.entries(deptNames)
+                    .filter(([code]) => !['000', '150', '850'].includes(code))
+                    .map(([code, name]) => (
+                      <option key={code} value={code}>{name} ({code})</option>
+                    ))}
                 </select>
               </div>
             ) : (
