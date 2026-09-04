@@ -1054,11 +1054,19 @@ export default function DashboardPage() {
   }
 
   async function handleDeleteHire(hire: NewHire) {
-    if (hire.status !== 'draft') { setActionMsg('Only draft entries can be deleted.'); return }
+    if (hire.status !== 'draft' && !(isAdmin && hire.status === 'approved')) { setActionMsg('Only draft entries can be deleted.'); return }
     if (!confirm(`Delete planned hire "${hire.position_title}"?`)) return
     const { error } = await supabase.from('budget_new_hires').delete().eq('id', hire.id)
     if (error) setActionMsg(`Error: ${error.message}`)
     else { setNewHires(prev => prev.filter(h => h.id !== hire.id)); setActionMsg('✓ Hire deleted.') }
+  }
+
+  async function handleUnsubmitHire(hire: NewHire) {
+    const { error } = await supabase.from('budget_new_hires')
+      .update({ status: 'draft', submitted_at: null }).eq('id', hire.id)
+    if (error) { setActionMsg('Error: ' + error.message); return }
+    setNewHires(prev => prev.map(h => h.id === hire.id ? { ...h, status: 'draft', submitted_at: null } : h))
+    setActionMsg('✓ Hire recalled to draft')
   }
 
   async function handleSubmitHire(hire: NewHire) {
@@ -1151,11 +1159,19 @@ export default function DashboardPage() {
   }
 
   async function handleDeleteCert(cert: CertRaise) {
-    if (cert.status !== 'draft') { setActionMsg('Only draft entries can be deleted.'); return }
+    if (cert.status !== 'draft' && !(isAdmin && cert.status === 'approved')) { setActionMsg('Only draft entries can be deleted.'); return }
     if (!confirm(`Delete cert raise for "${cert.employee_name} — ${cert.certification_name}"?`)) return
     const { error } = await supabase.from('budget_cert_raises').delete().eq('id', cert.id)
     if (error) setActionMsg(`Error: ${error.message}`)
     else { setCertRaises(prev => prev.filter(c => c.id !== cert.id)); setActionMsg('✓ Cert raise deleted.') }
+  }
+
+  async function handleUnsubmitCert(cert: CertRaise) {
+    const { error } = await supabase.from('budget_cert_raises')
+      .update({ status: 'draft', submitted_at: null }).eq('id', cert.id)
+    if (error) { setActionMsg('Error: ' + error.message); return }
+    setCertRaises(prev => prev.map(c => c.id === cert.id ? { ...c, status: 'draft', submitted_at: null } : c))
+    setActionMsg('✓ Cert raise recalled to draft')
   }
 
   async function handleSubmitCert(cert: CertRaise) {
@@ -2775,6 +2791,20 @@ export default function DashboardPage() {
                                         {hireSubmittingId === hire.id ? '…' : '↑ Submit'}
                                       </button>
                                     )}
+                                    {hire.status === 'submitted' && (
+                                      <button onClick={() => handleUnsubmitHire(hire)}
+                                        className="text-xs text-amber-600 hover:text-amber-700 transition-colors whitespace-nowrap"
+                                        style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                                        ↩ Unsubmit
+                                      </button>
+                                    )}
+                                    {hire.status === 'approved' && isAdmin && (
+                                      <button onClick={() => handleDeleteHire(hire)}
+                                        className="text-xs text-gray-400 hover:text-red-500 transition-colors whitespace-nowrap"
+                                        style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                                        ✕ Remove
+                                      </button>
+                                    )}
                                     {canDelete && (
                                       <button onClick={() => handleDeleteHire(hire)}
                                         className="text-gray-300 hover:text-red-500 transition-colors" title="Delete">
@@ -2952,6 +2982,20 @@ export default function DashboardPage() {
                                         className="text-xs font-bold px-2 py-0.5 rounded transition-colors whitespace-nowrap"
                                         style={{ background: 'rgba(49,108,127,.1)', color: '#316c7f' }}>
                                         {certSubmittingId === cert.id ? '…' : '↑ Submit'}
+                                      </button>
+                                    )}
+                                    {cert.status === 'submitted' && (
+                                      <button onClick={() => handleUnsubmitCert(cert)}
+                                        className="text-xs text-amber-600 hover:text-amber-700 transition-colors whitespace-nowrap"
+                                        style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                                        ↩ Unsubmit
+                                      </button>
+                                    )}
+                                    {cert.status === 'approved' && isAdmin && (
+                                      <button onClick={() => handleDeleteCert(cert)}
+                                        className="text-xs text-gray-400 hover:text-red-500 transition-colors whitespace-nowrap"
+                                        style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                                        ✕ Remove
                                       </button>
                                     )}
                                     {canDelete && (
