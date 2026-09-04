@@ -434,28 +434,21 @@ export default function DashboardPage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const items2027 = ((res2027.data ?? []) as any[]).map(cast)
 
-    const allCodes = [...new Set([...items2025, ...items2026, ...items2027].map(i => i.account_code))].sort()
-    let glDesc: Record<string, string> = {}
-    if (allCodes.length > 0) {
-      const { data: glRows } = await supabase
-        .from('gl_accounts').select('account_code, description').in('account_code', allCodes)
-      for (const gl of glRows ?? []) glDesc[gl.account_code] = gl.description
-    }
-
-    // Use 2026 codes as the primary account list (approved reference year).
-    // Fall back to 2025 codes if the dept has no 2026 data, then any 2027 drafts.
-    const codes2026 = [...new Set(items2026.map(i => i.account_code))].sort()
-    const codes2025 = [...new Set(items2025.map(i => i.account_code))].sort()
-    const codes2027 = [...new Set(items2027.map(i => i.account_code))].sort()
-    const baseCodes = codes2026.length > 0 ? codes2026
-                    : codes2025.length > 0 ? codes2025
-                    : codes2027
-    // Always include any 2027 draft codes even if they aren't in the base list
-    const acctCodes = [...new Set([...baseCodes, ...codes2027])].sort()
-    const accts: AccountMeta[] = acctCodes.map(code => ({
-      account_code: code,
-      description: glDesc[code] ?? code,
-    }))
+    // Account list is static — these are the 9 categories directors control.
+    // The dept code fills the last segment; Computer Software uses dept+1 as its sub-code.
+    const deptSuffix = dept.padStart(3, '0')
+    const softwareSuffix = deptSuffix.slice(0, -1) + '1'
+    const accts: AccountMeta[] = [
+      { account_code: `609-000-${deptSuffix}`, description: 'Client Retention' },
+      { account_code: `624-000-${deptSuffix}`, description: 'Dues & Licensing' },
+      { account_code: `625-000-${deptSuffix}`, description: 'External Meals' },
+      { account_code: `628-000-${deptSuffix}`, description: 'Education & Training' },
+      { account_code: `629-000-${deptSuffix}`, description: 'Internal Meals' },
+      { account_code: `661-000-${deptSuffix}`, description: 'Office Supplies' },
+      { account_code: `680-000-${deptSuffix}`, description: 'Computer Hardware' },
+      { account_code: `680-000-${softwareSuffix}`, description: 'Computer Software' },
+      { account_code: `687-000-${deptSuffix}`, description: 'Travel' },
+    ]
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const castHire = (r: any): NewHire => ({
@@ -508,6 +501,7 @@ export default function DashboardPage() {
     setLineItems(items2027)
     setNewHires(((resHires.data ?? []) as any[]).map(castHire)) // eslint-disable-line @typescript-eslint/no-explicit-any
     setCertRaises(((resCerts.data ?? []) as any[]).map(castCert)) // eslint-disable-line @typescript-eslint/no-explicit-any
+    const glDesc = Object.fromEntries(accts.map(a => [a.account_code, a.description]))
     setAccounts(accts)
     setGlDescriptions(glDesc)
     setWindowOpen(windowIsOpen(dept, wins))
