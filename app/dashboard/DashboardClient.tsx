@@ -788,8 +788,8 @@ export default function DashboardPage() {
   // ── Delete line item ──────────────────────────────────────────────────────
 
   async function handleDeleteItem(item: LineItem) {
-    if (item.status !== 'draft') { setActionMsg('Only draft items can be deleted.'); return }
-    if (isPastMonth(item.month)) { setActionMsg('Past-month items cannot be deleted.'); return }
+    if (item.status !== 'draft' && !(isAdmin && item.status === 'approved')) { setActionMsg('Only draft items can be deleted.'); return }
+    if (item.status === 'draft' && isPastMonth(item.month)) { setActionMsg('Past-month items cannot be deleted.'); return }
     if (!confirm(`Delete "${item.description}" (${MONTH_NAMES[item.month - 1]})?`)) return
 
     const { error } = await supabase.from('budget_line_items').delete().eq('id', item.id)
@@ -802,6 +802,14 @@ export default function DashboardPage() {
   }
 
   // ── Submit single item ────────────────────────────────────────────────────
+
+  async function handleUnsubmitItem(item: LineItem) {
+    const { error } = await supabase.from('budget_line_items')
+      .update({ status: 'draft', submitted_at: null }).eq('id', item.id)
+    if (error) { setActionMsg('Error: ' + error.message); return }
+    setLineItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'draft', submitted_at: null } : i))
+    setActionMsg('✓ Item recalled to draft')
+  }
 
   async function handleSubmitItem(item: LineItem) {
     if (!windowOpen) { setActionMsg('Submission window is currently closed.'); return }
@@ -2491,6 +2499,22 @@ export default function DashboardPage() {
                                             style={{ background: 'rgba(49,108,127,.1)', color: '#316c7f' }}
                                             title="Submit for approval">
                                             {submittingId === item.id ? '…' : '↑ Submit'}
+                                          </button>
+                                        )}
+                                        {item.status === 'submitted' && (
+                                          <button onClick={() => handleUnsubmitItem(item)}
+                                            className="text-xs text-amber-600 hover:text-amber-700 transition-colors whitespace-nowrap"
+                                            style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+                                            title="Recall to draft">
+                                            ↩ Unsubmit
+                                          </button>
+                                        )}
+                                        {item.status === 'approved' && isAdmin && (
+                                          <button onClick={() => handleDeleteItem(item)}
+                                            className="text-xs text-gray-400 hover:text-red-500 transition-colors whitespace-nowrap"
+                                            style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+                                            title="Remove approved item">
+                                            ✕ Remove
                                           </button>
                                         )}
                                         {canDelete && (
