@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, Suspense } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
@@ -32,7 +32,7 @@ function MHRHeader() {
   )
 }
 
-function ResetPasswordForm() {
+export default function ResetPasswordPage() {
   const router = useRouter()
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -43,77 +43,27 @@ function ResetPasswordForm() {
   const [checking, setChecking] = useState(true)
 
   useEffect(() => {
-    const supabase = createClient()
-
-    // With implicit flow, Supabase detects the #access_token in the URL and fires
-    // PASSWORD_RECOVERY via onAuthStateChange. Subscribe before checking session
-    // so we don't miss the event.
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'PASSWORD_RECOVERY' || (event === 'SIGNED_IN' && session)) {
-        setSessionReady(true)
-        setChecking(false)
-      }
-    })
-
-    // Also check for an existing session (handles redirect from /auth/callback)
-    supabase.auth.getSession().then(({ data }) => {
+    // Session was established by /confirm-reset before redirecting here
+    createClient().auth.getSession().then(({ data }) => {
       if (data.session) {
         setSessionReady(true)
-        setChecking(false)
+      } else {
+        setError('No active session. Please use the reset link from your email.')
       }
+      setChecking(false)
     })
-
-    // Check for error param in URL hash (e.g. #error=access_denied)
-    const hash = window.location.hash
-    if (hash) {
-      const params = new URLSearchParams(hash.slice(1))
-      if (params.get('error')) {
-        setError('This password reset link has expired or already been used. Please request a new one.')
-        setChecking(false)
-      }
-    }
-
-    // Timeout: if no session/event after 5 s, the link is likely invalid
-    const timer = setTimeout(() => {
-      setChecking(prev => {
-        if (prev) {
-          setError('This password reset link has expired or already been used. Please request a new one.')
-          return false
-        }
-        return prev
-      })
-    }, 5000)
-
-    return () => {
-      subscription.unsubscribe()
-      clearTimeout(timer)
-    }
   }, [])
 
   async function handleReset(e: React.FormEvent) {
     e.preventDefault()
     setError('')
-
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters.')
-      return
-    }
-    if (password !== confirm) {
-      setError('Passwords do not match.')
-      return
-    }
+    if (password.length < 8) { setError('Password must be at least 8 characters.'); return }
+    if (password !== confirm) { setError('Passwords do not match.'); return }
 
     setLoading(true)
-    const supabase = createClient()
-    const { error } = await supabase.auth.updateUser({ password })
-
-    if (error) {
-      setError(error.message)
-      setLoading(false)
-    } else {
-      setSuccess(true)
-      setTimeout(() => router.push('/dashboard'), 2500)
-    }
+    const { error } = await createClient().auth.updateUser({ password })
+    if (error) { setError(error.message); setLoading(false) }
+    else { setSuccess(true); setTimeout(() => router.push('/dashboard'), 2500) }
   }
 
   if (success) return (
@@ -129,13 +79,13 @@ function ResetPasswordForm() {
     </div>
   )
 
-  if (!checking && !sessionReady && error) return (
+  if (!checking && !sessionReady) return (
     <div className="min-h-screen flex items-center justify-center p-6" style={BG}>
       <div className="w-full max-w-md rounded-xl shadow-2xl overflow-hidden bg-white">
         <MHRHeader />
         <div className="px-9 py-8 text-center">
           <div className="text-4xl mb-4">⚠️</div>
-          <h2 className="text-xl font-bold text-gray-900 mb-2">Link expired</h2>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Session expired</h2>
           <p className="text-gray-500 text-sm mb-6">{error}</p>
           <Link href="/forgot-password" className="btn-primary block py-2.5 text-center">
             Request new reset link
@@ -157,55 +107,35 @@ function ResetPasswordForm() {
           <p className="text-xs text-gray-400 mb-6">Choose a strong password for your account.</p>
           <form onSubmit={handleReset} className="space-y-5">
             <div>
-              <label className="block text-xs font-bold tracking-widest uppercase text-gray-500 mb-1.5">
-                New password
-              </label>
+              <label className="block text-xs font-bold tracking-widest uppercase text-gray-500 mb-1.5">New password</label>
               <input
                 type="password" required value={password}
                 onChange={e => setPassword(e.target.value)}
-                className="input-field"
-                placeholder="At least 8 characters"
+                className="input-field" placeholder="At least 8 characters"
                 autoComplete="new-password"
               />
             </div>
             <div>
-              <label className="block text-xs font-bold tracking-widest uppercase text-gray-500 mb-1.5">
-                Confirm password
-              </label>
+              <label className="block text-xs font-bold tracking-widest uppercase text-gray-500 mb-1.5">Confirm password</label>
               <input
                 type="password" required value={confirm}
                 onChange={e => setConfirm(e.target.value)}
-                className="input-field"
-                placeholder="••••••••"
+                className="input-field" placeholder="••••••••"
                 autoComplete="new-password"
               />
             </div>
             {error && (
               <div className="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-700">{error}</div>
             )}
-            <button
-              type="submit"
-              disabled={loading || !sessionReady}
-              className="btn-primary w-full py-2.5"
-            >
-              {loading ? 'Updating…' : checking ? 'Verifying link…' : 'Update password'}
+            <button type="submit" disabled={loading || checking || !sessionReady} className="btn-primary w-full py-2.5">
+              {loading ? 'Updating…' : checking ? 'Loading…' : 'Update password'}
             </button>
           </form>
           <p className="text-center mt-6">
-            <Link href="/login" className="text-xs font-semibold hover:underline" style={{ color: '#316c7f' }}>
-              Back to sign in
-            </Link>
+            <Link href="/login" className="text-xs font-semibold hover:underline" style={{ color: '#316c7f' }}>Back to sign in</Link>
           </p>
         </div>
       </div>
     </div>
-  )
-}
-
-export default function ResetPasswordPage() {
-  return (
-    <Suspense>
-      <ResetPasswordForm />
-    </Suspense>
   )
 }
