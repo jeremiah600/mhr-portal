@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient, SCENARIOS } from '@/lib/supabase'
 
@@ -320,6 +320,17 @@ export default function DashboardPage() {
   const [mktApprovingId, setMktApprovingId] = useState<string | null>(null)
   const [mktReturningId, setMktReturningId] = useState<string | null>(null)
   const [mktReturnComment, setMktReturnComment] = useState<Record<string, string>>({})
+
+  // Inline edit state for returned items
+  const [editingItemId, setEditingItemId] = useState<string | null>(null)
+  const [editItemForm, setEditItemForm] = useState({ description: '', employee_name: '', vendor: '', notes: '', month: 1, amount: '' })
+  const [editItemSaving, setEditItemSaving] = useState(false)
+  const [editingHireId, setEditingHireId] = useState<string | null>(null)
+  const [editHireForm, setEditHireForm] = useState({ position_title: '', anticipated_name: '', annual_pay: '', start_month: 1, notes: '' })
+  const [editHireSaving, setEditHireSaving] = useState(false)
+  const [editingCertId, setEditingCertId] = useState<string | null>(null)
+  const [editCertForm, setEditCertForm] = useState({ employee_name: '', ee_id: '', certification_name: '', expected_month: 1, hourly_raise: '', notes: '' })
+  const [editCertSaving, setEditCertSaving] = useState(false)
 
   const [loading, setLoading] = useState(true)
   const [actionMsg, setActionMsg] = useState('')
@@ -808,7 +819,7 @@ export default function DashboardPage() {
   // ── Delete line item ──────────────────────────────────────────────────────
 
   async function handleDeleteItem(item: LineItem) {
-    if (item.status !== 'draft' && !(isAdmin && item.status === 'approved')) { setActionMsg('Only draft items can be deleted.'); return }
+    if (item.status !== 'draft' && item.status !== 'returned' && !(isAdmin && item.status === 'approved')) { setActionMsg('Only draft or returned items can be deleted.'); return }
     if (item.status === 'draft' && isPastMonth(item.month)) { setActionMsg('Past-month items cannot be deleted.'); return }
     if (!confirm(`Delete "${item.description}" (${MONTH_NAMES[item.month - 1]})?`)) return
 
@@ -819,6 +830,47 @@ export default function DashboardPage() {
       await logAudit('delete', item.id, { description: item.description })
       setActionMsg('✓ Item deleted.')
     }
+  }
+
+  // ── Edit returned line item ───────────────────────────────────────────────
+
+  function startEditItem(item: LineItem) {
+    setEditingItemId(item.id)
+    setEditItemForm({
+      description: item.description,
+      employee_name: item.employee_name,
+      vendor: item.vendor,
+      notes: item.notes,
+      month: item.month,
+      amount: String(item.amount),
+    })
+  }
+
+  async function handleSaveItemEdit(item: LineItem) {
+    const amount = parseFloat(editItemForm.amount)
+    if (!editItemForm.description.trim()) { setActionMsg('Description is required.'); return }
+    if (isNaN(amount) || amount <= 0) { setActionMsg('Enter a valid amount.'); return }
+    setEditItemSaving(true)
+    const { error } = await supabase.from('budget_line_items')
+      .update({
+        description: editItemForm.description.trim(),
+        employee_name: editItemForm.employee_name.trim(),
+        vendor: editItemForm.vendor.trim(),
+        notes: editItemForm.notes.trim(),
+        month: editItemForm.month,
+        amount,
+        status: 'draft',
+        return_comment: null,
+      })
+      .eq('id', item.id)
+    if (error) { setActionMsg(`Error: ${error.message}`); setEditItemSaving(false); return }
+    setLineItems(prev => prev.map(i => i.id === item.id
+      ? { ...i, description: editItemForm.description.trim(), employee_name: editItemForm.employee_name.trim(), vendor: editItemForm.vendor.trim(), notes: editItemForm.notes.trim(), month: editItemForm.month, amount, status: 'draft', return_comment: null }
+      : i))
+    await logAudit('edit', item.id, { description: editItemForm.description })
+    setEditingItemId(null)
+    setEditItemSaving(false)
+    setActionMsg('✓ Item updated — ready to resubmit.')
   }
 
   // ── Submit single item ────────────────────────────────────────────────────
@@ -1057,11 +1109,47 @@ export default function DashboardPage() {
   }
 
   async function handleDeleteHire(hire: NewHire) {
-    if (hire.status !== 'draft' && !(isAdmin && hire.status === 'approved')) { setActionMsg('Only draft entries can be deleted.'); return }
+    if (hire.status !== 'draft' && hire.status !== 'returned' && !(isAdmin && hire.status === 'approved')) { setActionMsg('Only draft or returned entries can be deleted.'); return }
     if (!confirm(`Delete planned hire "${hire.position_title}"?`)) return
     const { error } = await supabase.from('budget_new_hires').delete().eq('id', hire.id)
     if (error) setActionMsg(`Error: ${error.message}`)
     else { setNewHires(prev => prev.filter(h => h.id !== hire.id)); setActionMsg('✓ Hire deleted.') }
+  }
+
+  function startEditHire(hire: NewHire) {
+    setEditingHireId(hire.id)
+    setEditHireForm({
+      position_title: hire.position_title,
+      anticipated_name: hire.anticipated_name,
+      annual_pay: String(hire.annual_pay),
+      start_month: hire.start_month,
+      notes: hire.notes ?? '',
+    })
+  }
+
+  async function handleSaveHireEdit(hire: NewHire) {
+    const annual_pay = parseFloat(editHireForm.annual_pay)
+    if (!editHireForm.position_title.trim()) { setActionMsg('Position title is required.'); return }
+    if (isNaN(annual_pay) || annual_pay <= 0) { setActionMsg('Enter a valid annual pay.'); return }
+    setEditHireSaving(true)
+    const { error } = await supabase.from('budget_new_hires')
+      .update({
+        position_title: editHireForm.position_title.trim(),
+        anticipated_name: editHireForm.anticipated_name.trim(),
+        annual_pay,
+        start_month: editHireForm.start_month,
+        notes: editHireForm.notes.trim() || null,
+        status: 'draft',
+        return_comment: null,
+      })
+      .eq('id', hire.id)
+    if (error) { setActionMsg(`Error: ${error.message}`); setEditHireSaving(false); return }
+    setNewHires(prev => prev.map(h => h.id === hire.id
+      ? { ...h, position_title: editHireForm.position_title.trim(), anticipated_name: editHireForm.anticipated_name.trim(), annual_pay, start_month: editHireForm.start_month, notes: editHireForm.notes.trim() || null, status: 'draft', return_comment: null }
+      : h))
+    setEditingHireId(null)
+    setEditHireSaving(false)
+    setActionMsg('✓ Hire updated — ready to resubmit.')
   }
 
   async function handleUnsubmitHire(hire: NewHire) {
@@ -1162,11 +1250,50 @@ export default function DashboardPage() {
   }
 
   async function handleDeleteCert(cert: CertRaise) {
-    if (cert.status !== 'draft' && !(isAdmin && cert.status === 'approved')) { setActionMsg('Only draft entries can be deleted.'); return }
+    if (cert.status !== 'draft' && cert.status !== 'returned' && !(isAdmin && cert.status === 'approved')) { setActionMsg('Only draft or returned entries can be deleted.'); return }
     if (!confirm(`Delete cert raise for "${cert.employee_name} — ${cert.certification_name}"?`)) return
     const { error } = await supabase.from('budget_cert_raises').delete().eq('id', cert.id)
     if (error) setActionMsg(`Error: ${error.message}`)
     else { setCertRaises(prev => prev.filter(c => c.id !== cert.id)); setActionMsg('✓ Cert raise deleted.') }
+  }
+
+  function startEditCert(cert: CertRaise) {
+    setEditingCertId(cert.id)
+    setEditCertForm({
+      employee_name: cert.employee_name,
+      ee_id: cert.ee_id ?? '',
+      certification_name: cert.certification_name,
+      expected_month: cert.expected_month,
+      hourly_raise: String(cert.hourly_raise),
+      notes: cert.notes ?? '',
+    })
+  }
+
+  async function handleSaveCertEdit(cert: CertRaise) {
+    const hourly_raise = parseFloat(editCertForm.hourly_raise)
+    if (!editCertForm.employee_name.trim()) { setActionMsg('Employee name is required.'); return }
+    if (!editCertForm.certification_name.trim()) { setActionMsg('Certification name is required.'); return }
+    if (isNaN(hourly_raise) || hourly_raise <= 0) { setActionMsg('Enter a valid raise amount.'); return }
+    setEditCertSaving(true)
+    const { error } = await supabase.from('budget_cert_raises')
+      .update({
+        employee_name: editCertForm.employee_name.trim(),
+        ee_id: editCertForm.ee_id.trim() || null,
+        certification_name: editCertForm.certification_name.trim(),
+        expected_month: editCertForm.expected_month,
+        hourly_raise,
+        notes: editCertForm.notes.trim() || null,
+        status: 'draft',
+        return_comment: null,
+      })
+      .eq('id', cert.id)
+    if (error) { setActionMsg(`Error: ${error.message}`); setEditCertSaving(false); return }
+    setCertRaises(prev => prev.map(c => c.id === cert.id
+      ? { ...c, employee_name: editCertForm.employee_name.trim(), ee_id: editCertForm.ee_id.trim() || null, certification_name: editCertForm.certification_name.trim(), expected_month: editCertForm.expected_month, hourly_raise, notes: editCertForm.notes.trim() || null, status: 'draft', return_comment: null }
+      : c))
+    setEditingCertId(null)
+    setEditCertSaving(false)
+    setActionMsg('✓ Cert raise updated — ready to resubmit.')
   }
 
   async function handleUnsubmitCert(cert: CertRaise) {
@@ -2725,71 +2852,143 @@ export default function DashboardPage() {
                             <tbody>
                               {acctItems.map((item, idx) => {
                                 const past = isPastMonth(item.month)
-                                const canDelete = item.status === 'draft' && !past
+                                const canDelete = (item.status === 'draft' && !past) || item.status === 'returned'
                                 const canSubmit = windowOpen && (item.status === 'draft' || item.status === 'returned') && !past
                                 const returned = item.status === 'returned'
+                                const isEditing = editingItemId === item.id
                                 return (
-                                  <tr key={item.id} className="border-t border-gray-100"
-                                    style={{
-                                      background: returned ? '#fff7f7' : idx % 2 === 0 ? '#fff' : 'rgba(0,0,0,.015)',
-                                    }}>
-                                    <td className="px-3 py-2 text-gray-800 font-medium max-w-[180px] truncate" title={item.description}>
-                                      {item.description}
-                                      {returned && item.return_comment && (
-                                        <div className="text-xs text-red-400 font-normal truncate" title={item.return_comment}>
-                                          ↩ {item.return_comment}
+                                  <React.Fragment key={item.id}>
+                                    <tr className="border-t border-gray-100"
+                                      style={{
+                                        background: returned ? '#fff7f7' : idx % 2 === 0 ? '#fff' : 'rgba(0,0,0,.015)',
+                                      }}>
+                                      <td className="px-3 py-2 text-gray-800 font-medium max-w-[180px] truncate" title={item.description}>
+                                        {item.description}
+                                        {returned && item.return_comment && (
+                                          <div className="text-xs text-red-400 font-normal truncate" title={item.return_comment}>
+                                            ↩ {item.return_comment}
+                                          </div>
+                                        )}
+                                      </td>
+                                      <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{item.employee_name || <span className="text-gray-300">—</span>}</td>
+                                      <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{item.vendor || <span className="text-gray-300">—</span>}</td>
+                                      <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{MONTH_NAMES[item.month - 1]}</td>
+                                      <td className="px-3 py-2 text-right font-semibold whitespace-nowrap"
+                                        style={{ color: '#316c7f', fontVariantNumeric: 'tabular-nums' }}>
+                                        ${item.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                      </td>
+                                      <td className="px-3 py-2 text-gray-500 max-w-[140px] truncate" title={item.notes}>{item.notes || <span className="text-gray-300">—</span>}</td>
+                                      <td className="px-3 py-2 whitespace-nowrap"><StatusBadge item={item} /></td>
+                                      <td className="px-3 py-2 whitespace-nowrap">
+                                        <div className="flex items-center gap-1.5">
+                                          {returned && (
+                                            <button onClick={() => isEditing ? setEditingItemId(null) : startEditItem(item)}
+                                              className="text-xs font-bold px-2 py-0.5 rounded transition-colors whitespace-nowrap"
+                                              style={{ background: isEditing ? '#f3f4f6' : 'rgba(49,108,127,.1)', color: isEditing ? '#6b7280' : '#316c7f' }}
+                                              title="Edit this item">
+                                              {isEditing ? '✕ Cancel' : '✎ Edit'}
+                                            </button>
+                                          )}
+                                          {canSubmit && !isEditing && (
+                                            <button onClick={() => handleSubmitItem(item)}
+                                              disabled={submittingId === item.id}
+                                              className="text-xs font-bold px-2 py-0.5 rounded transition-colors whitespace-nowrap"
+                                              style={{ background: 'rgba(49,108,127,.1)', color: '#316c7f' }}
+                                              title="Submit for approval">
+                                              {submittingId === item.id ? '…' : '↑ Submit'}
+                                            </button>
+                                          )}
+                                          {item.status === 'submitted' && (
+                                            <button onClick={() => handleUnsubmitItem(item)}
+                                              className="text-xs text-amber-600 hover:text-amber-700 transition-colors whitespace-nowrap"
+                                              style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+                                              title="Recall to draft">
+                                              ↩ Unsubmit
+                                            </button>
+                                          )}
+                                          {item.status === 'approved' && isAdmin && (
+                                            <button onClick={() => handleDeleteItem(item)}
+                                              className="text-xs text-gray-400 hover:text-red-500 transition-colors whitespace-nowrap"
+                                              style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+                                              title="Remove approved item">
+                                              ✕ Remove
+                                            </button>
+                                          )}
+                                          {canDelete && (
+                                            <button onClick={() => handleDeleteItem(item)}
+                                              className="text-gray-300 hover:text-red-500 transition-colors"
+                                              title="Delete item">
+                                              <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+                                                <path d="M2 4h11M5 4V2.5h5V4M6 7v4M9 7v4M3 4l.7 8.5A1 1 0 004.7 13.5h5.6a1 1 0 001-.9L12 4"
+                                                  stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+                                              </svg>
+                                            </button>
+                                          )}
                                         </div>
-                                      )}
-                                    </td>
-                                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{item.employee_name || <span className="text-gray-300">—</span>}</td>
-                                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{item.vendor || <span className="text-gray-300">—</span>}</td>
-                                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{MONTH_NAMES[item.month - 1]}</td>
-                                    <td className="px-3 py-2 text-right font-semibold whitespace-nowrap"
-                                      style={{ color: '#316c7f', fontVariantNumeric: 'tabular-nums' }}>
-                                      ${item.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                    </td>
-                                    <td className="px-3 py-2 text-gray-500 max-w-[140px] truncate" title={item.notes}>{item.notes || <span className="text-gray-300">—</span>}</td>
-                                    <td className="px-3 py-2 whitespace-nowrap"><StatusBadge item={item} /></td>
-                                    <td className="px-3 py-2 whitespace-nowrap">
-                                      <div className="flex items-center gap-1.5">
-                                        {canSubmit && (
-                                          <button onClick={() => handleSubmitItem(item)}
-                                            disabled={submittingId === item.id}
-                                            className="text-xs font-bold px-2 py-0.5 rounded transition-colors whitespace-nowrap"
-                                            style={{ background: 'rgba(49,108,127,.1)', color: '#316c7f' }}
-                                            title="Submit for approval">
-                                            {submittingId === item.id ? '…' : '↑ Submit'}
-                                          </button>
-                                        )}
-                                        {item.status === 'submitted' && (
-                                          <button onClick={() => handleUnsubmitItem(item)}
-                                            className="text-xs text-amber-600 hover:text-amber-700 transition-colors whitespace-nowrap"
-                                            style={{ background: 'none', border: 'none', cursor: 'pointer' }}
-                                            title="Recall to draft">
-                                            ↩ Unsubmit
-                                          </button>
-                                        )}
-                                        {item.status === 'approved' && isAdmin && (
-                                          <button onClick={() => handleDeleteItem(item)}
-                                            className="text-xs text-gray-400 hover:text-red-500 transition-colors whitespace-nowrap"
-                                            style={{ background: 'none', border: 'none', cursor: 'pointer' }}
-                                            title="Remove approved item">
-                                            ✕ Remove
-                                          </button>
-                                        )}
-                                        {canDelete && (
-                                          <button onClick={() => handleDeleteItem(item)}
-                                            className="text-gray-300 hover:text-red-500 transition-colors"
-                                            title="Delete item">
-                                            <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
-                                              <path d="M2 4h11M5 4V2.5h5V4M6 7v4M9 7v4M3 4l.7 8.5A1 1 0 004.7 13.5h5.6a1 1 0 001-.9L12 4"
-                                                stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-                                            </svg>
-                                          </button>
-                                        )}
-                                      </div>
-                                    </td>
-                                  </tr>
+                                      </td>
+                                    </tr>
+                                    {isEditing && (
+                                      <tr className="border-t border-red-100">
+                                        <td colSpan={8} className="px-3 py-3" style={{ background: '#fff5f5' }}>
+                                          <div className="flex flex-wrap gap-2 items-end">
+                                            <div className="flex flex-col gap-1">
+                                              <label className="text-xs font-semibold text-gray-500">Description <span style={{ color: '#ff930c' }}>*</span></label>
+                                              <input type="text" value={editItemForm.description}
+                                                onChange={e => setEditItemForm(f => ({ ...f, description: e.target.value }))}
+                                                className="input-field" style={{ width: 200 }} autoFocus />
+                                            </div>
+                                            <div className="flex flex-col gap-1">
+                                              <label className="text-xs font-semibold text-gray-500">Employee</label>
+                                              <input type="text" value={editItemForm.employee_name}
+                                                onChange={e => setEditItemForm(f => ({ ...f, employee_name: e.target.value }))}
+                                                className="input-field" style={{ width: 130 }} />
+                                            </div>
+                                            <div className="flex flex-col gap-1">
+                                              <label className="text-xs font-semibold text-gray-500">{acct.account_code.startsWith('609') ? 'Client' : 'Vendor'}</label>
+                                              <input type="text" value={editItemForm.vendor}
+                                                onChange={e => setEditItemForm(f => ({ ...f, vendor: e.target.value }))}
+                                                className="input-field" style={{ width: 140 }} />
+                                            </div>
+                                            <div className="flex flex-col gap-1">
+                                              <label className="text-xs font-semibold text-gray-500">Notes</label>
+                                              <input type="text" value={editItemForm.notes}
+                                                onChange={e => setEditItemForm(f => ({ ...f, notes: e.target.value }))}
+                                                className="input-field" style={{ width: 150 }} />
+                                            </div>
+                                            <div className="flex flex-col gap-1">
+                                              <label className="text-xs font-semibold text-gray-500">Month <span style={{ color: '#ff930c' }}>*</span></label>
+                                              <select value={editItemForm.month}
+                                                onChange={e => setEditItemForm(f => ({ ...f, month: Number(e.target.value) }))}
+                                                className="input-field" style={{ width: 110 }}>
+                                                {MONTH_NAMES.map((m, i) => (
+                                                  <option key={i} value={i + 1}>{m}</option>
+                                                ))}
+                                              </select>
+                                            </div>
+                                            <div className="flex flex-col gap-1">
+                                              <label className="text-xs font-semibold text-gray-500">Amount <span style={{ color: '#ff930c' }}>*</span></label>
+                                              <input type="number" step="0.01" min="0" value={editItemForm.amount}
+                                                onChange={e => setEditItemForm(f => ({ ...f, amount: e.target.value }))}
+                                                className="input-field" style={{ width: 110 }} />
+                                            </div>
+                                            <div className="flex gap-2 items-center mt-1">
+                                              <button onClick={() => handleSaveItemEdit(item)}
+                                                disabled={editItemSaving}
+                                                className="text-xs font-bold px-3 py-1.5 rounded transition-colors whitespace-nowrap"
+                                                style={{ background: '#316c7f', color: '#fff' }}>
+                                                {editItemSaving ? 'Saving…' : '✓ Save Changes'}
+                                              </button>
+                                              <button onClick={() => setEditingItemId(null)}
+                                                className="text-xs text-gray-400 hover:text-gray-600 transition-colors whitespace-nowrap"
+                                                style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                                                Cancel
+                                              </button>
+                                            </div>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    )}
+                                  </React.Fragment>
                                 )
                               })}
                             </tbody>
@@ -2983,70 +3182,136 @@ export default function DashboardPage() {
                         </thead>
                         <tbody>
                           {newHires.map((hire, idx) => {
-                            const canDelete = hire.status === 'draft'
+                            const canDelete = hire.status === 'draft' || hire.status === 'returned'
                             const canSubmit = windowOpen && (hire.status === 'draft' || hire.status === 'returned')
+                            const isEditingHire = editingHireId === hire.id
                             return (
-                              <tr key={hire.id} className="border-t border-gray-100"
-                                style={{ background: hire.status === 'returned' ? '#fff7f7' : idx % 2 === 0 ? '#fff' : 'rgba(0,0,0,.015)' }}>
-                                <td className="px-3 py-2 font-medium text-gray-800 whitespace-nowrap">
-                                  {hire.position_title}
-                                  {hire.status === 'returned' && hire.return_comment && (
-                                    <div className="text-xs text-red-400 font-normal truncate" title={hire.return_comment}>↩ {hire.return_comment}</div>
-                                  )}
-                                </td>
-                                <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{hire.anticipated_name}</td>
-                                <td className="px-3 py-2 text-right font-semibold whitespace-nowrap"
-                                  style={{ color: '#316c7f', fontVariantNumeric: 'tabular-nums' }}>
-                                  ${hire.annual_pay.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </td>
-                                <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{MONTH_NAMES[hire.start_month - 1]}</td>
-                                <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{hire.benefits_plan || <span className="text-gray-300">—</span>}</td>
-                                <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
-                                  {hire.retirement_pct != null ? `${(hire.retirement_pct * 100).toFixed(1)}%` : <span className="text-gray-300">—</span>}
-                                </td>
-                                <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
-                                  {hire.phone_allowance > 0 ? `$${hire.phone_allowance.toFixed(0)}/mo` : <span className="text-gray-300">—</span>}
-                                </td>
-                                <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
-                                  {hire.bonus_amt ? `$${hire.bonus_amt.toLocaleString()} in ${MONTH_NAMES[(hire.bonus_month ?? 1) - 1]}` : <span className="text-gray-300">—</span>}
-                                </td>
-                                <td className="px-3 py-2 whitespace-nowrap"><StatusBadge item={hire} /></td>
-                                <td className="px-3 py-2 whitespace-nowrap">
-                                  <div className="flex items-center gap-1.5">
-                                    {canSubmit && (
-                                      <button onClick={() => handleSubmitHire(hire)}
-                                        disabled={hireSubmittingId === hire.id}
-                                        className="text-xs font-bold px-2 py-0.5 rounded transition-colors whitespace-nowrap"
-                                        style={{ background: 'rgba(49,108,127,.1)', color: '#316c7f' }}>
-                                        {hireSubmittingId === hire.id ? '…' : '↑ Submit'}
-                                      </button>
+                              <React.Fragment key={hire.id}>
+                                <tr className="border-t border-gray-100"
+                                  style={{ background: hire.status === 'returned' ? '#fff7f7' : idx % 2 === 0 ? '#fff' : 'rgba(0,0,0,.015)' }}>
+                                  <td className="px-3 py-2 font-medium text-gray-800 whitespace-nowrap">
+                                    {hire.position_title}
+                                    {hire.status === 'returned' && hire.return_comment && (
+                                      <div className="text-xs text-red-400 font-normal truncate" title={hire.return_comment}>↩ {hire.return_comment}</div>
                                     )}
-                                    {hire.status === 'submitted' && (
-                                      <button onClick={() => handleUnsubmitHire(hire)}
-                                        className="text-xs text-amber-600 hover:text-amber-700 transition-colors whitespace-nowrap"
-                                        style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
-                                        ↩ Unsubmit
-                                      </button>
-                                    )}
-                                    {hire.status === 'approved' && isAdmin && (
-                                      <button onClick={() => handleDeleteHire(hire)}
-                                        className="text-xs text-gray-400 hover:text-red-500 transition-colors whitespace-nowrap"
-                                        style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
-                                        ✕ Remove
-                                      </button>
-                                    )}
-                                    {canDelete && (
-                                      <button onClick={() => handleDeleteHire(hire)}
-                                        className="text-gray-300 hover:text-red-500 transition-colors" title="Delete">
-                                        <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
-                                          <path d="M2 4h11M5 4V2.5h5V4M6 7v4M9 7v4M3 4l.7 8.5A1 1 0 004.7 13.5h5.6a1 1 0 001-.9L12 4"
-                                            stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-                                        </svg>
-                                      </button>
-                                    )}
-                                  </div>
-                                </td>
-                              </tr>
+                                  </td>
+                                  <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{hire.anticipated_name}</td>
+                                  <td className="px-3 py-2 text-right font-semibold whitespace-nowrap"
+                                    style={{ color: '#316c7f', fontVariantNumeric: 'tabular-nums' }}>
+                                    ${hire.annual_pay.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </td>
+                                  <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{MONTH_NAMES[hire.start_month - 1]}</td>
+                                  <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{hire.benefits_plan || <span className="text-gray-300">—</span>}</td>
+                                  <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                                    {hire.retirement_pct != null ? `${(hire.retirement_pct * 100).toFixed(1)}%` : <span className="text-gray-300">—</span>}
+                                  </td>
+                                  <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                                    {hire.phone_allowance > 0 ? `$${hire.phone_allowance.toFixed(0)}/mo` : <span className="text-gray-300">—</span>}
+                                  </td>
+                                  <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                                    {hire.bonus_amt ? `$${hire.bonus_amt.toLocaleString()} in ${MONTH_NAMES[(hire.bonus_month ?? 1) - 1]}` : <span className="text-gray-300">—</span>}
+                                  </td>
+                                  <td className="px-3 py-2 whitespace-nowrap"><StatusBadge item={hire} /></td>
+                                  <td className="px-3 py-2 whitespace-nowrap">
+                                    <div className="flex items-center gap-1.5">
+                                      {hire.status === 'returned' && (
+                                        <button onClick={() => isEditingHire ? setEditingHireId(null) : startEditHire(hire)}
+                                          className="text-xs font-bold px-2 py-0.5 rounded transition-colors whitespace-nowrap"
+                                          style={{ background: isEditingHire ? '#f3f4f6' : 'rgba(49,108,127,.1)', color: isEditingHire ? '#6b7280' : '#316c7f' }}>
+                                          {isEditingHire ? '✕ Cancel' : '✎ Edit'}
+                                        </button>
+                                      )}
+                                      {canSubmit && !isEditingHire && (
+                                        <button onClick={() => handleSubmitHire(hire)}
+                                          disabled={hireSubmittingId === hire.id}
+                                          className="text-xs font-bold px-2 py-0.5 rounded transition-colors whitespace-nowrap"
+                                          style={{ background: 'rgba(49,108,127,.1)', color: '#316c7f' }}>
+                                          {hireSubmittingId === hire.id ? '…' : '↑ Submit'}
+                                        </button>
+                                      )}
+                                      {hire.status === 'submitted' && (
+                                        <button onClick={() => handleUnsubmitHire(hire)}
+                                          className="text-xs text-amber-600 hover:text-amber-700 transition-colors whitespace-nowrap"
+                                          style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                                          ↩ Unsubmit
+                                        </button>
+                                      )}
+                                      {hire.status === 'approved' && isAdmin && (
+                                        <button onClick={() => handleDeleteHire(hire)}
+                                          className="text-xs text-gray-400 hover:text-red-500 transition-colors whitespace-nowrap"
+                                          style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                                          ✕ Remove
+                                        </button>
+                                      )}
+                                      {canDelete && (
+                                        <button onClick={() => handleDeleteHire(hire)}
+                                          className="text-gray-300 hover:text-red-500 transition-colors" title="Delete">
+                                          <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+                                            <path d="M2 4h11M5 4V2.5h5V4M6 7v4M9 7v4M3 4l.7 8.5A1 1 0 004.7 13.5h5.6a1 1 0 001-.9L12 4"
+                                              stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+                                          </svg>
+                                        </button>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                                {isEditingHire && (
+                                  <tr className="border-t border-red-100">
+                                    <td colSpan={10} className="px-3 py-3" style={{ background: '#fff5f5' }}>
+                                      <div className="flex flex-wrap gap-2 items-end">
+                                        <div className="flex flex-col gap-1">
+                                          <label className="text-xs font-semibold text-gray-500">Position Title <span style={{ color: '#ff930c' }}>*</span></label>
+                                          <input type="text" value={editHireForm.position_title}
+                                            onChange={e => setEditHireForm(f => ({ ...f, position_title: e.target.value }))}
+                                            className="input-field" style={{ width: 200 }} autoFocus />
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                          <label className="text-xs font-semibold text-gray-500">Anticipated Name</label>
+                                          <input type="text" value={editHireForm.anticipated_name}
+                                            onChange={e => setEditHireForm(f => ({ ...f, anticipated_name: e.target.value }))}
+                                            className="input-field" style={{ width: 160 }} />
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                          <label className="text-xs font-semibold text-gray-500">Annual Pay <span style={{ color: '#ff930c' }}>*</span></label>
+                                          <input type="number" step="1000" min="0" value={editHireForm.annual_pay}
+                                            onChange={e => setEditHireForm(f => ({ ...f, annual_pay: e.target.value }))}
+                                            className="input-field" style={{ width: 130 }} />
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                          <label className="text-xs font-semibold text-gray-500">Start Month <span style={{ color: '#ff930c' }}>*</span></label>
+                                          <select value={editHireForm.start_month}
+                                            onChange={e => setEditHireForm(f => ({ ...f, start_month: Number(e.target.value) }))}
+                                            className="input-field" style={{ width: 110 }}>
+                                            {MONTH_NAMES.map((m, i) => (
+                                              <option key={i} value={i + 1}>{m}</option>
+                                            ))}
+                                          </select>
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                          <label className="text-xs font-semibold text-gray-500">Notes</label>
+                                          <input type="text" value={editHireForm.notes}
+                                            onChange={e => setEditHireForm(f => ({ ...f, notes: e.target.value }))}
+                                            className="input-field" style={{ width: 180 }} />
+                                        </div>
+                                        <div className="flex gap-2 items-center mt-1">
+                                          <button onClick={() => handleSaveHireEdit(hire)}
+                                            disabled={editHireSaving}
+                                            className="text-xs font-bold px-3 py-1.5 rounded transition-colors whitespace-nowrap"
+                                            style={{ background: '#316c7f', color: '#fff' }}>
+                                            {editHireSaving ? 'Saving…' : '✓ Save Changes'}
+                                          </button>
+                                          <button onClick={() => setEditingHireId(null)}
+                                            className="text-xs text-gray-400 hover:text-gray-600 transition-colors whitespace-nowrap"
+                                            style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                                            Cancel
+                                          </button>
+                                        </div>
+                                      </div>
+                                      <p className="text-xs text-gray-400 mt-2">Benefits, retirement, phone, and bonus settings are not shown here — delete and re-add this hire to change those.</p>
+                                    </td>
+                                  </tr>
+                                )}
+                              </React.Fragment>
                             )
                           })}
                         </tbody>
@@ -3184,62 +3449,133 @@ export default function DashboardPage() {
                         </thead>
                         <tbody>
                           {certRaises.map((cert, idx) => {
-                            const canDelete = cert.status === 'draft'
+                            const canDelete = cert.status === 'draft' || cert.status === 'returned'
                             const canSubmit = windowOpen && (cert.status === 'draft' || cert.status === 'returned')
+                            const isEditingCert = editingCertId === cert.id
                             return (
-                              <tr key={cert.id} className="border-t border-gray-100"
-                                style={{ background: cert.status === 'returned' ? '#fff7f7' : idx % 2 === 0 ? '#fff' : 'rgba(0,0,0,.015)' }}>
-                                <td className="px-3 py-2 font-medium text-gray-800 whitespace-nowrap">
-                                  {cert.employee_name}
-                                  {cert.status === 'returned' && cert.return_comment && (
-                                    <div className="text-xs text-red-400 font-normal truncate" title={cert.return_comment}>↩ {cert.return_comment}</div>
-                                  )}
-                                </td>
-                                <td className="px-3 py-2 font-mono text-xs text-gray-500 whitespace-nowrap">{cert.ee_id || <span className="text-gray-300">—</span>}</td>
-                                <td className="px-3 py-2 text-gray-700 whitespace-nowrap">🎓 {cert.certification_name}</td>
-                                <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{MONTH_NAMES[cert.expected_month - 1]}</td>
-                                <td className="px-3 py-2 text-right font-semibold whitespace-nowrap"
-                                  style={{ color: '#316c7f', fontVariantNumeric: 'tabular-nums' }}>
-                                  +${cert.hourly_raise.toFixed(4)}/hr
-                                </td>
-                                <td className="px-3 py-2 text-gray-500 max-w-[140px] truncate" title={cert.notes ?? ''}>{cert.notes || <span className="text-gray-300">—</span>}</td>
-                                <td className="px-3 py-2 whitespace-nowrap"><StatusBadge item={cert} /></td>
-                                <td className="px-3 py-2 whitespace-nowrap">
-                                  <div className="flex items-center gap-1.5">
-                                    {canSubmit && (
-                                      <button onClick={() => handleSubmitCert(cert)}
-                                        disabled={certSubmittingId === cert.id}
-                                        className="text-xs font-bold px-2 py-0.5 rounded transition-colors whitespace-nowrap"
-                                        style={{ background: 'rgba(49,108,127,.1)', color: '#316c7f' }}>
-                                        {certSubmittingId === cert.id ? '…' : '↑ Submit'}
-                                      </button>
+                              <React.Fragment key={cert.id}>
+                                <tr className="border-t border-gray-100"
+                                  style={{ background: cert.status === 'returned' ? '#fff7f7' : idx % 2 === 0 ? '#fff' : 'rgba(0,0,0,.015)' }}>
+                                  <td className="px-3 py-2 font-medium text-gray-800 whitespace-nowrap">
+                                    {cert.employee_name}
+                                    {cert.status === 'returned' && cert.return_comment && (
+                                      <div className="text-xs text-red-400 font-normal truncate" title={cert.return_comment}>↩ {cert.return_comment}</div>
                                     )}
-                                    {cert.status === 'submitted' && (
-                                      <button onClick={() => handleUnsubmitCert(cert)}
-                                        className="text-xs text-amber-600 hover:text-amber-700 transition-colors whitespace-nowrap"
-                                        style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
-                                        ↩ Unsubmit
-                                      </button>
-                                    )}
-                                    {cert.status === 'approved' && isAdmin && (
-                                      <button onClick={() => handleDeleteCert(cert)}
-                                        className="text-xs text-gray-400 hover:text-red-500 transition-colors whitespace-nowrap"
-                                        style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
-                                        ✕ Remove
-                                      </button>
-                                    )}
-                                    {canDelete && (
-                                      <button onClick={() => handleDeleteCert(cert)}
-                                        className="text-gray-300 hover:text-red-500 transition-colors" title="Delete">
-                                        <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
-                                          <path d="M2 4h11M5 4V2.5h5V4M6 7v4M9 7v4M3 4l.7 8.5A1 1 0 004.7 13.5h5.6a1 1 0 001-.9L12 4"
-                                            stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-                                        </svg>
-                                      </button>
-                                    )}
-                                  </div>
-                                </td>
-                              </tr>
+                                  </td>
+                                  <td className="px-3 py-2 font-mono text-xs text-gray-500 whitespace-nowrap">{cert.ee_id || <span className="text-gray-300">—</span>}</td>
+                                  <td className="px-3 py-2 text-gray-700 whitespace-nowrap">🎓 {cert.certification_name}</td>
+                                  <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{MONTH_NAMES[cert.expected_month - 1]}</td>
+                                  <td className="px-3 py-2 text-right font-semibold whitespace-nowrap"
+                                    style={{ color: '#316c7f', fontVariantNumeric: 'tabular-nums' }}>
+                                    +${cert.hourly_raise.toFixed(4)}/hr
+                                  </td>
+                                  <td className="px-3 py-2 text-gray-500 max-w-[140px] truncate" title={cert.notes ?? ''}>{cert.notes || <span className="text-gray-300">—</span>}</td>
+                                  <td className="px-3 py-2 whitespace-nowrap"><StatusBadge item={cert} /></td>
+                                  <td className="px-3 py-2 whitespace-nowrap">
+                                    <div className="flex items-center gap-1.5">
+                                      {cert.status === 'returned' && (
+                                        <button onClick={() => isEditingCert ? setEditingCertId(null) : startEditCert(cert)}
+                                          className="text-xs font-bold px-2 py-0.5 rounded transition-colors whitespace-nowrap"
+                                          style={{ background: isEditingCert ? '#f3f4f6' : 'rgba(49,108,127,.1)', color: isEditingCert ? '#6b7280' : '#316c7f' }}>
+                                          {isEditingCert ? '✕ Cancel' : '✎ Edit'}
+                                        </button>
+                                      )}
+                                      {canSubmit && !isEditingCert && (
+                                        <button onClick={() => handleSubmitCert(cert)}
+                                          disabled={certSubmittingId === cert.id}
+                                          className="text-xs font-bold px-2 py-0.5 rounded transition-colors whitespace-nowrap"
+                                          style={{ background: 'rgba(49,108,127,.1)', color: '#316c7f' }}>
+                                          {certSubmittingId === cert.id ? '…' : '↑ Submit'}
+                                        </button>
+                                      )}
+                                      {cert.status === 'submitted' && (
+                                        <button onClick={() => handleUnsubmitCert(cert)}
+                                          className="text-xs text-amber-600 hover:text-amber-700 transition-colors whitespace-nowrap"
+                                          style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                                          ↩ Unsubmit
+                                        </button>
+                                      )}
+                                      {cert.status === 'approved' && isAdmin && (
+                                        <button onClick={() => handleDeleteCert(cert)}
+                                          className="text-xs text-gray-400 hover:text-red-500 transition-colors whitespace-nowrap"
+                                          style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                                          ✕ Remove
+                                        </button>
+                                      )}
+                                      {canDelete && (
+                                        <button onClick={() => handleDeleteCert(cert)}
+                                          className="text-gray-300 hover:text-red-500 transition-colors" title="Delete">
+                                          <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+                                            <path d="M2 4h11M5 4V2.5h5V4M6 7v4M9 7v4M3 4l.7 8.5A1 1 0 004.7 13.5h5.6a1 1 0 001-.9L12 4"
+                                              stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+                                          </svg>
+                                        </button>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                                {isEditingCert && (
+                                  <tr className="border-t border-red-100">
+                                    <td colSpan={8} className="px-3 py-3" style={{ background: '#fff5f5' }}>
+                                      <div className="flex flex-wrap gap-2 items-end">
+                                        <div className="flex flex-col gap-1">
+                                          <label className="text-xs font-semibold text-gray-500">Employee Name <span style={{ color: '#ff930c' }}>*</span></label>
+                                          <input type="text" value={editCertForm.employee_name}
+                                            onChange={e => setEditCertForm(f => ({ ...f, employee_name: e.target.value }))}
+                                            className="input-field" style={{ width: 180 }} autoFocus />
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                          <label className="text-xs font-semibold text-gray-500">EE ID</label>
+                                          <input type="text" value={editCertForm.ee_id}
+                                            onChange={e => setEditCertForm(f => ({ ...f, ee_id: e.target.value }))}
+                                            className="input-field" style={{ width: 100 }} />
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                          <label className="text-xs font-semibold text-gray-500">Certification <span style={{ color: '#ff930c' }}>*</span></label>
+                                          <input type="text" value={editCertForm.certification_name}
+                                            onChange={e => setEditCertForm(f => ({ ...f, certification_name: e.target.value }))}
+                                            className="input-field" style={{ width: 200 }} />
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                          <label className="text-xs font-semibold text-gray-500">Expected Month</label>
+                                          <select value={editCertForm.expected_month}
+                                            onChange={e => setEditCertForm(f => ({ ...f, expected_month: Number(e.target.value) }))}
+                                            className="input-field" style={{ width: 110 }}>
+                                            {MONTH_NAMES.map((m, i) => (
+                                              <option key={i} value={i + 1}>{m}</option>
+                                            ))}
+                                          </select>
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                          <label className="text-xs font-semibold text-gray-500">Hourly Raise ($) <span style={{ color: '#ff930c' }}>*</span></label>
+                                          <input type="number" step="0.0001" min="0" value={editCertForm.hourly_raise}
+                                            onChange={e => setEditCertForm(f => ({ ...f, hourly_raise: e.target.value }))}
+                                            className="input-field" style={{ width: 110 }} />
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                          <label className="text-xs font-semibold text-gray-500">Notes</label>
+                                          <input type="text" value={editCertForm.notes}
+                                            onChange={e => setEditCertForm(f => ({ ...f, notes: e.target.value }))}
+                                            className="input-field" style={{ width: 160 }} />
+                                        </div>
+                                        <div className="flex gap-2 items-center mt-1">
+                                          <button onClick={() => handleSaveCertEdit(cert)}
+                                            disabled={editCertSaving}
+                                            className="text-xs font-bold px-3 py-1.5 rounded transition-colors whitespace-nowrap"
+                                            style={{ background: '#316c7f', color: '#fff' }}>
+                                            {editCertSaving ? 'Saving…' : '✓ Save Changes'}
+                                          </button>
+                                          <button onClick={() => setEditingCertId(null)}
+                                            className="text-xs text-gray-400 hover:text-gray-600 transition-colors whitespace-nowrap"
+                                            style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                                            Cancel
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                )}
+                              </React.Fragment>
                             )
                           })}
                         </tbody>
