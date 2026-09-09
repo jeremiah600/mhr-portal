@@ -332,6 +332,19 @@ export default function DashboardPage() {
   const [editCertForm, setEditCertForm] = useState({ employee_name: '', ee_id: '', certification_name: '', expected_month: 1, hourly_raise: '', notes: '' })
   const [editCertSaving, setEditCertSaving] = useState(false)
 
+  // Admin recall state (Option A — pull back approved item to director)
+  const [recallingItemId, setRecallingItemId] = useState<string | null>(null)
+  const [recallItemNote, setRecallItemNote] = useState('')
+  const [recallingHireId, setRecallingHireId] = useState<string | null>(null)
+  const [recallHireNote, setRecallHireNote] = useState('')
+  const [recallingCertId, setRecallingCertId] = useState<string | null>(null)
+  const [recallCertNote, setRecallCertNote] = useState('')
+
+  // Admin edit state (Option B — adjust approved item amount with reason)
+  const [adminEditItemId, setAdminEditItemId] = useState<string | null>(null)
+  const [adminEditItemForm, setAdminEditItemForm] = useState({ amount: '', admin_note: '' })
+  const [adminEditItemSaving, setAdminEditItemSaving] = useState(false)
+
   const [loading, setLoading] = useState(true)
   const [actionMsg, setActionMsg] = useState('')
   const [savingItem, setSavingItem] = useState(false)
@@ -972,6 +985,110 @@ export default function DashboardPage() {
 
   // ── Admin: approve item ───────────────────────────────────────────────────
 
+  // ── Promote approved expense item to budget_lines ────────────────────────
+
+  async function promoteItemToBudgetLines(item: PendingItem) {
+    const isCode = parseInt(item.account_code.split('-')[0])
+    const { error } = await supabase.from('budget_lines').insert({
+      scenario_id: SCENARIOS.DIRECTOR_2027,
+      is_code: isCode,
+      account_code: item.account_code,
+      dept_code: item.dept_code,
+      year: 2027,
+      month: item.month,
+      amount: item.amount,
+      original_amount: item.amount,
+      source: 'DIRECTOR_INPUT',
+      status: 'approved',
+      budget_line_item_id: item.id,
+    })
+    if (error) console.error('promote to budget_lines failed:', error.message)
+  }
+
+  // ── Admin: Option A — recall approved expense item ────────────────────────
+
+  async function handleRecallItem(item: LineItem, note: string) {
+    if (!note.trim()) { setActionMsg('Add a note explaining why before recalling.'); return }
+    setRecallingItemId(item.id)
+    await supabase.from('budget_lines').delete().eq('budget_line_item_id', item.id)
+    const { error } = await supabase.from('budget_line_items').update({
+      status: 'returned',
+      approved_by_jeremiah: false, jeremiah_approved_at: null,
+      approved_by_joseph: false, joseph_approved_at: null,
+      return_comment: `[Recalled by admin] ${note}`,
+      admin_note: note,
+    }).eq('id', item.id)
+    if (error) { setActionMsg(`Error: ${error.message}`); setRecallingItemId(null); return }
+    setLineItems(prev => prev.map(i => i.id === item.id
+      ? { ...i, status: 'returned', approved_by_jeremiah: false, approved_by_joseph: false, return_comment: `[Recalled by admin] ${note}` }
+      : i))
+    setRecallingItemId(null)
+    setRecallItemNote('')
+    await logAudit('recall', item.id, { note })
+    setActionMsg('✓ Item recalled and returned to director for revision.')
+  }
+
+  // ── Admin: Option B — edit approved expense item amount ───────────────────
+
+  async function handleAdminEditItem(item: LineItem, newAmount: number, adminNote: string) {
+    if (!adminNote.trim()) { setActionMsg('Reason is required when editing an approved item.'); return }
+    if (!newAmount || newAmount <= 0) { setActionMsg('Enter a valid amount.'); return }
+    setAdminEditItemSaving(true)
+    const { error } = await supabase.from('budget_line_items').update({
+      amount: newAmount, admin_note: adminNote,
+    }).eq('id', item.id)
+    if (error) { setActionMsg(`Error: ${error.message}`); setAdminEditItemSaving(false); return }
+    await supabase.from('budget_lines').update({ amount: newAmount }).eq('budget_line_item_id', item.id)
+    setLineItems(prev => prev.map(i => i.id === item.id ? { ...i, amount: newAmount } : i))
+    setAdminEditItemId(null)
+    setAdminEditItemForm({ amount: '', admin_note: '' })
+    setAdminEditItemSaving(false)
+    await logAudit('admin_edit', item.id, { new_amount: newAmount, reason: adminNote })
+    setActionMsg('✓ Amount updated on approved item.')
+  }
+
+  // ── Admin: Option A — recall approved hire ────────────────────────────────
+
+  async function handleRecallHire(hire: NewHire, note: string) {
+    if (!note.trim()) { setActionMsg('Add a note explaining why before recalling.'); return }
+    setRecallingHireId(hire.id)
+    const { error } = await supabase.from('budget_new_hires').update({
+      status: 'returned',
+      approved_by_jeremiah: false, jeremiah_approved_at: null,
+      approved_by_joseph: false, joseph_approved_at: null,
+      return_comment: `[Recalled by admin] ${note}`,
+    }).eq('id', hire.id)
+    if (error) { setActionMsg(`Error: ${error.message}`); setRecallingHireId(null); return }
+    setNewHires(prev => prev.map(h => h.id === hire.id
+      ? { ...h, status: 'returned', approved_by_jeremiah: false, approved_by_joseph: false, return_comment: `[Recalled by admin] ${note}` }
+      : h))
+    setRecallingHireId(null)
+    setRecallHireNote('')
+    await logAudit('recall_hire', hire.id, { note })
+    setActionMsg('✓ New hire recalled and returned to director.')
+  }
+
+  // ── Admin: Option A — recall approved cert raise ──────────────────────────
+
+  async function handleRecallCert(cert: CertRaise, note: string) {
+    if (!note.trim()) { setActionMsg('Add a note explaining why before recalling.'); return }
+    setRecallingCertId(cert.id)
+    const { error } = await supabase.from('budget_cert_raises').update({
+      status: 'returned',
+      approved_by_jeremiah: false, jeremiah_approved_at: null,
+      approved_by_joseph: false, joseph_approved_at: null,
+      return_comment: `[Recalled by admin] ${note}`,
+    }).eq('id', cert.id)
+    if (error) { setActionMsg(`Error: ${error.message}`); setRecallingCertId(null); return }
+    setCertRaises(prev => prev.map(c => c.id === cert.id
+      ? { ...c, status: 'returned', approved_by_jeremiah: false, approved_by_joseph: false, return_comment: `[Recalled by admin] ${note}` }
+      : c))
+    setRecallingCertId(null)
+    setRecallCertNote('')
+    await logAudit('recall_cert', cert.id, { note })
+    setActionMsg('✓ Cert raise recalled and returned to director.')
+  }
+
   async function handleApproveItem(item: PendingItem) {
     setApprovingId(item.id)
     const isJeremiah = userEmail === 'jbogdon@myhrpros.com'
@@ -1010,6 +1127,7 @@ export default function DashboardPage() {
     await logAudit('approve', item.id, { approver: userEmail, fully_approved: bothApproved })
 
     if (bothApproved) {
+      await promoteItemToBudgetLines(item)
       await sendNotify('approved', {
         dept: deptNames[item.dept_code] ?? item.dept_code,
         description: item.description,
@@ -2237,6 +2355,18 @@ export default function DashboardPage() {
                                           {item.approved_by_joseph ? '✓' : '⏳'} Joseph
                                         </span>
                                       </div>
+                                      {/* Budget headroom: show competing pending items for same GL code */}
+                                      {(() => {
+                                        const competing = pendingItems.filter(o => o.account_code === item.account_code && o.id !== item.id)
+                                        if (competing.length === 0) return null
+                                        const total = competing.reduce((s, o) => s + o.amount, 0)
+                                        return (
+                                          <div className="mt-1.5 text-xs px-2 py-0.5 rounded inline-flex items-center gap-1"
+                                            style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a' }}>
+                                            ⚠ {competing.length} other item{competing.length !== 1 ? 's' : ''} also pending under {item.account_code} — ${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} total
+                                          </div>
+                                        )
+                                      })()}
                                     </div>
                                     <div className="flex flex-col gap-2 items-end">
                                       {!myApproved && (
@@ -2906,14 +3036,28 @@ export default function DashboardPage() {
                                               ↩ Unsubmit
                                             </button>
                                           )}
-                                          {item.status === 'approved' && isAdmin && (
-                                            <button onClick={() => handleDeleteItem(item)}
-                                              className="text-xs text-gray-400 hover:text-red-500 transition-colors whitespace-nowrap"
-                                              style={{ background: 'none', border: 'none', cursor: 'pointer' }}
-                                              title="Remove approved item">
-                                              ✕ Remove
+                                          {item.status === 'approved' && isAdmin && (<>
+                                            <button onClick={() => {
+                                              const opening = adminEditItemId !== item.id
+                                              setAdminEditItemId(opening ? item.id : null)
+                                              if (opening) { setAdminEditItemForm({ amount: String(item.amount), admin_note: '' }); setRecallingItemId(null) }
+                                            }}
+                                              className="text-xs font-bold px-2 py-0.5 rounded transition-colors whitespace-nowrap"
+                                              style={{ background: adminEditItemId === item.id ? '#f3f4f6' : 'rgba(49,108,127,.1)', color: adminEditItemId === item.id ? '#6b7280' : '#316c7f', border: 'none', cursor: 'pointer' }}
+                                              title="Edit amount on approved item">
+                                              {adminEditItemId === item.id ? '✕ Cancel' : '✎ Edit'}
                                             </button>
-                                          )}
+                                            <button onClick={() => {
+                                              const opening = recallingItemId !== item.id
+                                              setRecallingItemId(opening ? item.id : null)
+                                              if (opening) { setRecallItemNote(''); setAdminEditItemId(null) }
+                                            }}
+                                              className="text-xs text-amber-600 hover:text-amber-700 transition-colors whitespace-nowrap"
+                                              style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+                                              title="Recall item back to director">
+                                              ↩ Recall
+                                            </button>
+                                          </>)}
                                           {canDelete && (
                                             <button onClick={() => handleDeleteItem(item)}
                                               className="text-gray-300 hover:text-red-500 transition-colors"
@@ -2927,6 +3071,65 @@ export default function DashboardPage() {
                                         </div>
                                       </td>
                                     </tr>
+                                    {adminEditItemId === item.id && (
+                                      <tr className="border-t border-blue-100">
+                                        <td colSpan={8} className="px-3 py-3" style={{ background: '#f0f7fa' }}>
+                                          <div className="flex flex-wrap gap-2 items-end">
+                                            <div className="flex flex-col gap-1">
+                                              <label className="text-xs font-semibold text-gray-500">New Amount <span style={{ color: '#ff930c' }}>*</span></label>
+                                              <input type="number" step="0.01" min="0" autoFocus
+                                                value={adminEditItemForm.amount}
+                                                onChange={e => setAdminEditItemForm(f => ({ ...f, amount: e.target.value }))}
+                                                className="input-field" style={{ width: 120 }} />
+                                            </div>
+                                            <div className="flex flex-col gap-1" style={{ flex: 1, minWidth: 220 }}>
+                                              <label className="text-xs font-semibold text-gray-500">Reason for change <span style={{ color: '#ff930c' }}>*</span></label>
+                                              <input type="text" placeholder="e.g. vendor quoted lower price"
+                                                value={adminEditItemForm.admin_note}
+                                                onChange={e => setAdminEditItemForm(f => ({ ...f, admin_note: e.target.value }))}
+                                                className="input-field" style={{ width: '100%' }} />
+                                            </div>
+                                            <div className="flex gap-2 items-center mt-1">
+                                              <button onClick={() => handleAdminEditItem(item, parseFloat(adminEditItemForm.amount), adminEditItemForm.admin_note)}
+                                                disabled={adminEditItemSaving}
+                                                className="text-xs font-bold px-3 py-1.5 rounded whitespace-nowrap"
+                                                style={{ background: '#316c7f', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                                                {adminEditItemSaving ? 'Saving…' : '✓ Update Amount'}
+                                              </button>
+                                              <button onClick={() => setAdminEditItemId(null)}
+                                                className="text-xs text-gray-400 hover:text-gray-600 whitespace-nowrap"
+                                                style={{ background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
+                                            </div>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    )}
+                                    {recallingItemId === item.id && (
+                                      <tr className="border-t border-amber-100">
+                                        <td colSpan={8} className="px-3 py-3" style={{ background: '#fffbeb' }}>
+                                          <div className="flex flex-wrap gap-2 items-end">
+                                            <div className="flex flex-col gap-1" style={{ flex: 1, minWidth: 260 }}>
+                                              <label className="text-xs font-semibold text-gray-500">Reason for recalling <span style={{ color: '#ff930c' }}>*</span></label>
+                                              <input type="text" placeholder="e.g. budget overrun — please revise amount" autoFocus
+                                                value={recallItemNote}
+                                                onChange={e => setRecallItemNote(e.target.value)}
+                                                className="input-field" style={{ width: '100%' }} />
+                                            </div>
+                                            <div className="flex gap-2 items-center mt-1">
+                                              <button onClick={() => handleRecallItem(item, recallItemNote)}
+                                                disabled={recallingItemId === item.id && !recallItemNote.trim()}
+                                                className="text-xs font-bold px-3 py-1.5 rounded whitespace-nowrap"
+                                                style={{ background: '#d97706', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                                                ↩ Confirm Recall
+                                              </button>
+                                              <button onClick={() => setRecallingItemId(null)}
+                                                className="text-xs text-gray-400 hover:text-gray-600 whitespace-nowrap"
+                                                style={{ background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
+                                            </div>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    )}
                                     {isEditing && (
                                       <tr className="border-t border-red-100">
                                         <td colSpan={8} className="px-3 py-3" style={{ background: '#fff5f5' }}>
@@ -3237,10 +3440,15 @@ export default function DashboardPage() {
                                         </button>
                                       )}
                                       {hire.status === 'approved' && isAdmin && (
-                                        <button onClick={() => handleDeleteHire(hire)}
-                                          className="text-xs text-gray-400 hover:text-red-500 transition-colors whitespace-nowrap"
-                                          style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
-                                          ✕ Remove
+                                        <button onClick={() => {
+                                          const opening = recallingHireId !== hire.id
+                                          setRecallingHireId(opening ? hire.id : null)
+                                          if (opening) setRecallHireNote('')
+                                        }}
+                                          className="text-xs text-amber-600 hover:text-amber-700 transition-colors whitespace-nowrap"
+                                          style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+                                          title="Recall hire back to director">
+                                          ↩ Recall
                                         </button>
                                       )}
                                       {canDelete && (
@@ -3255,6 +3463,31 @@ export default function DashboardPage() {
                                     </div>
                                   </td>
                                 </tr>
+                                {recallingHireId === hire.id && (
+                                  <tr className="border-t border-amber-100">
+                                    <td colSpan={10} className="px-3 py-3" style={{ background: '#fffbeb' }}>
+                                      <div className="flex flex-wrap gap-2 items-end">
+                                        <div className="flex flex-col gap-1" style={{ flex: 1, minWidth: 260 }}>
+                                          <label className="text-xs font-semibold text-gray-500">Reason for recalling <span style={{ color: '#ff930c' }}>*</span></label>
+                                          <input type="text" placeholder="e.g. position on hold — please resubmit when approved" autoFocus
+                                            value={recallHireNote}
+                                            onChange={e => setRecallHireNote(e.target.value)}
+                                            className="input-field" style={{ width: '100%' }} />
+                                        </div>
+                                        <div className="flex gap-2 items-center mt-1">
+                                          <button onClick={() => handleRecallHire(hire, recallHireNote)}
+                                            className="text-xs font-bold px-3 py-1.5 rounded whitespace-nowrap"
+                                            style={{ background: '#d97706', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                                            ↩ Confirm Recall
+                                          </button>
+                                          <button onClick={() => setRecallingHireId(null)}
+                                            className="text-xs text-gray-400 hover:text-gray-600 whitespace-nowrap"
+                                            style={{ background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
+                                        </div>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                )}
                                 {isEditingHire && (
                                   <tr className="border-t border-red-100">
                                     <td colSpan={10} className="px-3 py-3" style={{ background: '#fff5f5' }}>
@@ -3496,10 +3729,15 @@ export default function DashboardPage() {
                                         </button>
                                       )}
                                       {cert.status === 'approved' && isAdmin && (
-                                        <button onClick={() => handleDeleteCert(cert)}
-                                          className="text-xs text-gray-400 hover:text-red-500 transition-colors whitespace-nowrap"
-                                          style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
-                                          ✕ Remove
+                                        <button onClick={() => {
+                                          const opening = recallingCertId !== cert.id
+                                          setRecallingCertId(opening ? cert.id : null)
+                                          if (opening) setRecallCertNote('')
+                                        }}
+                                          className="text-xs text-amber-600 hover:text-amber-700 transition-colors whitespace-nowrap"
+                                          style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+                                          title="Recall cert raise back to director">
+                                          ↩ Recall
                                         </button>
                                       )}
                                       {canDelete && (
@@ -3514,6 +3752,31 @@ export default function DashboardPage() {
                                     </div>
                                   </td>
                                 </tr>
+                                {recallingCertId === cert.id && (
+                                  <tr className="border-t border-amber-100">
+                                    <td colSpan={8} className="px-3 py-3" style={{ background: '#fffbeb' }}>
+                                      <div className="flex flex-wrap gap-2 items-end">
+                                        <div className="flex flex-col gap-1" style={{ flex: 1, minWidth: 260 }}>
+                                          <label className="text-xs font-semibold text-gray-500">Reason for recalling <span style={{ color: '#ff930c' }}>*</span></label>
+                                          <input type="text" placeholder="e.g. certification timeline changed" autoFocus
+                                            value={recallCertNote}
+                                            onChange={e => setRecallCertNote(e.target.value)}
+                                            className="input-field" style={{ width: '100%' }} />
+                                        </div>
+                                        <div className="flex gap-2 items-center mt-1">
+                                          <button onClick={() => handleRecallCert(cert, recallCertNote)}
+                                            className="text-xs font-bold px-3 py-1.5 rounded whitespace-nowrap"
+                                            style={{ background: '#d97706', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                                            ↩ Confirm Recall
+                                          </button>
+                                          <button onClick={() => setRecallingCertId(null)}
+                                            className="text-xs text-gray-400 hover:text-gray-600 whitespace-nowrap"
+                                            style={{ background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
+                                        </div>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                )}
                                 {isEditingCert && (
                                   <tr className="border-t border-red-100">
                                     <td colSpan={8} className="px-3 py-3" style={{ background: '#fff5f5' }}>
