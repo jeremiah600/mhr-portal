@@ -32,6 +32,7 @@ interface LineItem {
   approved_by_joseph: boolean
   joseph_approved_at: string | null
   return_comment: string | null
+  created_by?: string | null
 }
 
 interface WindowRow {
@@ -135,7 +136,7 @@ const certHourlyRaise = (annual: number) => annual / 2080
 
 const LINE_SELECT = [
   'id', 'account_code', 'description', 'employee_name', 'vendor', 'notes',
-  'month', 'amount', 'status', 'submitted_at',
+  'month', 'amount', 'status', 'submitted_at', 'created_by',
   'approved_by_jeremiah', 'jeremiah_approved_at',
   'approved_by_joseph', 'joseph_approved_at', 'return_comment',
 ].join(', ')
@@ -642,6 +643,7 @@ export default function DashboardPage() {
       approved_by_joseph: Boolean(r.approved_by_joseph),
       joseph_approved_at: r.joseph_approved_at as string | null,
       return_comment: r.return_comment as string | null,
+      created_by: r.created_by as string | null,
     })))
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     setPendingHires(((hireRes.data ?? []) as any[]).map((r: any) => ({
@@ -1001,6 +1003,9 @@ export default function DashboardPage() {
       source: 'DIRECTOR_INPUT',
       status: 'approved',
       budget_line_item_id: item.id,
+      submitted_by: item.created_by ?? null,
+      approved_by: userId,
+      approved_at: new Date().toISOString(),
     })
     if (error) console.error('promote to budget_lines failed:', error.message)
   }
