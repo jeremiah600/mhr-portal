@@ -33,6 +33,7 @@ interface LineItem {
   joseph_approved_at: string | null
   return_comment: string | null
   created_by?: string | null
+  recurring_group_id?: string | null
 }
 
 interface WindowRow {
@@ -139,6 +140,7 @@ const LINE_SELECT = [
   'month', 'amount', 'status', 'submitted_at', 'created_by',
   'approved_by_jeremiah', 'jeremiah_approved_at',
   'approved_by_joseph', 'joseph_approved_at', 'return_comment',
+  'recurring_group_id',
 ].join(', ')
 
 const HIRE_SELECT = [
@@ -346,6 +348,12 @@ export default function DashboardPage() {
   const [adminEditItemForm, setAdminEditItemForm] = useState({ amount: '', admin_note: '' })
   const [adminEditItemSaving, setAdminEditItemSaving] = useState(false)
 
+  // Recurring group batch edit state
+  const [editingGroupId, setEditingGroupId] = useState<string | null>(null)
+  const [editGroupForm, setEditGroupForm] = useState({ description: '', employee_name: '', vendor: '', notes: '', amount: '' })
+  const [editGroupSaving, setEditGroupSaving] = useState(false)
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
+
   const [loading, setLoading] = useState(true)
   const [actionMsg, setActionMsg] = useState('')
   const [savingItem, setSavingItem] = useState(false)
@@ -470,6 +478,7 @@ export default function DashboardPage() {
       approved_by_joseph: Boolean(r.approved_by_joseph),
       joseph_approved_at: r.joseph_approved_at as string | null,
       return_comment: r.return_comment as string | null,
+      recurring_group_id: r.recurring_group_id ?? null,
     })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -783,10 +792,11 @@ export default function DashboardPage() {
       const to = Number(addForm.toMonth)
       if (from > to) { setActionMsg('Start month must be ≤ end month.'); setSavingItem(false); return }
 
+      const groupId = crypto.randomUUID()
       const payloads = []
       for (let m = from; m <= to; m++) {
         if (isPastMonth(m)) continue
-        payloads.push({ ...base, month: m })
+        payloads.push({ ...base, month: m, recurring_group_id: groupId })
       }
       if (payloads.length === 0) { setActionMsg('All selected months are in the past.'); setSavingItem(false); return }
 
@@ -885,7 +895,81 @@ export default function DashboardPage() {
     await logAudit('edit', item.id, { description: editItemForm.description })
     setEditingItemId(null)
     setEditItemSaving(false)
-    setActionMsg('✓ Item updated — ready to resubmit.')
+    setActionMsg(item.status === 'returned' ? '✓ Item updated — ready to resubmit.' : '✓ Item updated.')
+  }
+
+  // ── Recurring group batch operations ─────────────────────────────────────
+
+  function startEditGroup(groupId: string) {
+    const items = lineItems.filter(i => i.recurring_group_id === groupId)
+    if (items.length === 0) return
+    const first = items[0]
+    setEditingGroupId(groupId)
+    setEditGroupForm({
+      description: first.description,
+      employee_name: first.employee_name,
+      vendor: first.vendor,
+      notes: first.notes,
+      amount: String(first.amount),
+    })
+  }
+
+  async function handleSaveGroupEdit(groupId: string) {
+    const amount = parseFloat(editGroupForm.amount)
+    if (!editGroupForm.description.trim()) { setActionMsg('Description is required.'); return }
+    if (isNaN(amount) || amount <= 0) { setActionMsg('Enter a valid amount.'); return }
+    setEditGroupSaving(true)
+    const groupItems = lineItems.filter(i => i.recurring_group_id === groupId && (i.status === 'draft' || i.status === 'returned'))
+    if (groupItems.length === 0) { setEditGroupSaving(false); return }
+    const { error } = await supabase.from('budget_line_items')
+      .update({
+        description: editGroupForm.description.trim(),
+        employee_name: editGroupForm.employee_name.trim(),
+        vendor: editGroupForm.vendor.trim(),
+        notes: editGroupForm.notes.trim(),
+        amount,
+        status: 'draft',
+        return_comment: null,
+      })
+      .eq('recurring_group_id', groupId)
+      .in('status', ['draft', 'returned'])
+    if (error) { setActionMsg(`Error: ${error.message}`); setEditGroupSaving(false); return }
+    setLineItems(prev => prev.map(i => i.recurring_group_id === groupId && (i.status === 'draft' || i.status === 'returned')
+      ? { ...i, description: editGroupForm.description.trim(), employee_name: editGroupForm.employee_name.trim(), vendor: editGroupForm.vendor.trim(), notes: editGroupForm.notes.trim(), amount, status: 'draft', return_comment: null }
+      : i))
+    await logAudit('edit', undefined, { group_id: groupId, count: groupItems.length, description: editGroupForm.description })
+    setEditingGroupId(null)
+    setEditGroupSaving(false)
+    setActionMsg(`✓ ${groupItems.length} items updated.`)
+  }
+
+  async function handleDeleteGroup(groupId: string) {
+    const groupItems = lineItems.filter(i => i.recurring_group_id === groupId && (i.status === 'draft' || i.status === 'returned'))
+    if (groupItems.length === 0) return
+    const desc = groupItems[0].description
+    if (!confirm(`Delete all ${groupItems.length} months of "${desc}"?`)) return
+    const { error } = await supabase.from('budget_line_items')
+      .delete().eq('recurring_group_id', groupId).in('status', ['draft', 'returned'])
+    if (error) { setActionMsg(`Error: ${error.message}`); return }
+    setLineItems(prev => prev.filter(i => !(i.recurring_group_id === groupId && (i.status === 'draft' || i.status === 'returned'))))
+    await logAudit('delete', undefined, { group_id: groupId, count: groupItems.length })
+    setActionMsg(`✓ ${groupItems.length} items deleted.`)
+  }
+
+  async function handleSubmitGroup(groupId: string) {
+    if (!windowOpen) { setActionMsg('Submission window is currently closed.'); return }
+    const groupItems = lineItems.filter(i => i.recurring_group_id === groupId && (i.status === 'draft' || i.status === 'returned') && !isPastMonth(i.month))
+    if (groupItems.length === 0) return
+    const now = new Date().toISOString()
+    const { error } = await supabase.from('budget_line_items')
+      .update({ status: 'submitted', submitted_at: now, return_comment: null })
+      .eq('recurring_group_id', groupId)
+      .in('status', ['draft', 'returned'])
+    if (error) { setActionMsg(`Error: ${error.message}`); return }
+    setLineItems(prev => prev.map(i => i.recurring_group_id === groupId && (i.status === 'draft' || i.status === 'returned') && !isPastMonth(i.month)
+      ? { ...i, status: 'submitted', submitted_at: now, return_comment: null }
+      : i))
+    setActionMsg(`✓ ${groupItems.length} items submitted.`)
   }
 
   // ── Submit single item ────────────────────────────────────────────────────
@@ -1272,7 +1356,7 @@ export default function DashboardPage() {
       : h))
     setEditingHireId(null)
     setEditHireSaving(false)
-    setActionMsg('✓ Hire updated — ready to resubmit.')
+    setActionMsg(hire.status === 'returned' ? '✓ Hire updated — ready to resubmit.' : '✓ Hire updated.')
   }
 
   async function handleUnsubmitHire(hire: NewHire) {
@@ -1416,7 +1500,7 @@ export default function DashboardPage() {
       : c))
     setEditingCertId(null)
     setEditCertSaving(false)
-    setActionMsg('✓ Cert raise updated — ready to resubmit.')
+    setActionMsg(cert.status === 'returned' ? '✓ Cert raise updated — ready to resubmit.' : '✓ Cert raise updated.')
   }
 
   async function handleUnsubmitCert(cert: CertRaise) {
@@ -2985,220 +3069,461 @@ export default function DashboardPage() {
                               </tr>
                             </thead>
                             <tbody>
-                              {acctItems.map((item, idx) => {
-                                const past = isPastMonth(item.month)
-                                const canDelete = (item.status === 'draft' && !past) || item.status === 'returned'
-                                const canSubmit = windowOpen && (item.status === 'draft' || item.status === 'returned') && !past
-                                const returned = item.status === 'returned'
-                                const isEditing = editingItemId === item.id
-                                return (
-                                  <React.Fragment key={item.id}>
-                                    <tr className="border-t border-gray-100"
-                                      style={{
-                                        background: returned ? '#fff7f7' : idx % 2 === 0 ? '#fff' : 'rgba(0,0,0,.015)',
-                                      }}>
-                                      <td className="px-3 py-2 text-gray-800 font-medium max-w-[180px] truncate" title={item.description}>
-                                        {item.description}
-                                        {returned && item.return_comment && (
-                                          <div className="text-xs text-red-400 font-normal truncate" title={item.return_comment}>
-                                            ↩ {item.return_comment}
-                                          </div>
+                              {(() => {
+                                // Group recurring items together; standalone items render individually
+                                const seenGroups = new Set<string>()
+                                let standaloneIdx = 0
+                                return acctItems.flatMap(item => {
+                                  const gid = item.recurring_group_id
+                                  if (gid) {
+                                    if (seenGroups.has(gid)) return []
+                                    seenGroups.add(gid)
+                                    const groupItems = acctItems.filter(i => i.recurring_group_id === gid).sort((a, b) => a.month - b.month)
+                                    const collapsed = collapsedGroups.has(gid)
+                                    const hasReturned = groupItems.some(i => i.status === 'returned')
+                                    const editableItems = groupItems.filter(i => i.status === 'draft' || i.status === 'returned')
+                                    const submittableItems = groupItems.filter(i => (i.status === 'draft' || i.status === 'returned') && !isPastMonth(i.month))
+                                    const isEditingGroup = editingGroupId === gid
+                                    const first = groupItems[0]
+                                    const groupTotal = groupItems.reduce((s, i) => s + i.amount, 0)
+                                    return [(
+                                      <React.Fragment key={`group-${gid}`}>
+                                        {/* Group header row */}
+                                        <tr style={{ background: hasReturned ? '#fff0f0' : '#eef6fa', borderTop: '2px solid #c8dfe8' }}>
+                                          <td colSpan={8} className="px-3 py-2">
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                              <button onClick={() => setCollapsedGroups(prev => { const n = new Set(prev); n.has(gid) ? n.delete(gid) : n.add(gid); return n })}
+                                                className="text-gray-400 hover:text-gray-600 text-xs font-bold shrink-0"
+                                                style={{ background: 'none', border: 'none', cursor: 'pointer', width: 16 }}>
+                                                {collapsed ? '▶' : '▼'}
+                                              </button>
+                                              <span className="font-semibold text-gray-800 truncate flex-1" title={first.description}>
+                                                🔁 {first.description}
+                                              </span>
+                                              <span className="text-xs text-gray-500 whitespace-nowrap shrink-0">
+                                                {groupItems.length} months · ${groupTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                              </span>
+                                              {editableItems.length > 0 && (<>
+                                                <button onClick={() => isEditingGroup ? setEditingGroupId(null) : startEditGroup(gid)}
+                                                  className="text-xs font-bold px-2 py-0.5 rounded transition-colors whitespace-nowrap shrink-0"
+                                                  style={{ background: isEditingGroup ? '#f3f4f6' : 'rgba(49,108,127,.15)', color: isEditingGroup ? '#6b7280' : '#316c7f' }}>
+                                                  {isEditingGroup ? '✕ Cancel' : '✎ Edit All'}
+                                                </button>
+                                                {submittableItems.length > 0 && !isEditingGroup && windowOpen && (
+                                                  <button onClick={() => handleSubmitGroup(gid)}
+                                                    className="text-xs font-bold px-2 py-0.5 rounded transition-colors whitespace-nowrap shrink-0"
+                                                    style={{ background: 'rgba(49,108,127,.15)', color: '#316c7f' }}>
+                                                    ↑ Submit All
+                                                  </button>
+                                                )}
+                                                {!isEditingGroup && (
+                                                  <button onClick={() => handleDeleteGroup(gid)}
+                                                    className="text-gray-300 hover:text-red-500 transition-colors shrink-0"
+                                                    title="Delete entire recurring group">
+                                                    <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+                                                      <path d="M2 4h11M5 4V2.5h5V4M6 7v4M9 7v4M3 4l.7 8.5A1 1 0 004.7 13.5h5.6a1 1 0 001-.9L12 4"
+                                                        stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+                                                    </svg>
+                                                  </button>
+                                                )}
+                                              </>)}
+                                            </div>
+                                          </td>
+                                        </tr>
+                                        {/* Group batch-edit form */}
+                                        {isEditingGroup && (
+                                          <tr className="border-t border-blue-100">
+                                            <td colSpan={8} className="px-3 py-3" style={{ background: '#f0f7fa' }}>
+                                              <div className="flex flex-wrap gap-2 items-end">
+                                                <div className="flex flex-col gap-1">
+                                                  <label className="text-xs font-semibold text-gray-500">Description <span style={{ color: '#ff930c' }}>*</span></label>
+                                                  <input type="text" value={editGroupForm.description} autoFocus
+                                                    onChange={e => setEditGroupForm(f => ({ ...f, description: e.target.value }))}
+                                                    className="input-field" style={{ width: 200 }} />
+                                                </div>
+                                                <div className="flex flex-col gap-1">
+                                                  <label className="text-xs font-semibold text-gray-500">Employee</label>
+                                                  <input type="text" value={editGroupForm.employee_name}
+                                                    onChange={e => setEditGroupForm(f => ({ ...f, employee_name: e.target.value }))}
+                                                    className="input-field" style={{ width: 130 }} />
+                                                </div>
+                                                <div className="flex flex-col gap-1">
+                                                  <label className="text-xs font-semibold text-gray-500">Vendor</label>
+                                                  <input type="text" value={editGroupForm.vendor}
+                                                    onChange={e => setEditGroupForm(f => ({ ...f, vendor: e.target.value }))}
+                                                    className="input-field" style={{ width: 140 }} />
+                                                </div>
+                                                <div className="flex flex-col gap-1">
+                                                  <label className="text-xs font-semibold text-gray-500">Notes</label>
+                                                  <input type="text" value={editGroupForm.notes}
+                                                    onChange={e => setEditGroupForm(f => ({ ...f, notes: e.target.value }))}
+                                                    className="input-field" style={{ width: 150 }} />
+                                                </div>
+                                                <div className="flex flex-col gap-1">
+                                                  <label className="text-xs font-semibold text-gray-500">Amount/month <span style={{ color: '#ff930c' }}>*</span></label>
+                                                  <input type="number" step="0.01" min="0" value={editGroupForm.amount}
+                                                    onChange={e => setEditGroupForm(f => ({ ...f, amount: e.target.value }))}
+                                                    className="input-field" style={{ width: 110 }} />
+                                                </div>
+                                                <div className="flex gap-2 items-center mt-1">
+                                                  <button onClick={() => handleSaveGroupEdit(gid)}
+                                                    disabled={editGroupSaving}
+                                                    className="text-xs font-bold px-3 py-1.5 rounded transition-colors whitespace-nowrap"
+                                                    style={{ background: '#316c7f', color: '#fff' }}>
+                                                    {editGroupSaving ? 'Saving…' : `✓ Update ${editableItems.length} Items`}
+                                                  </button>
+                                                  <button onClick={() => setEditingGroupId(null)}
+                                                    className="text-xs text-gray-400 hover:text-gray-600 transition-colors whitespace-nowrap"
+                                                    style={{ background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
+                                                </div>
+                                              </div>
+                                            </td>
+                                          </tr>
                                         )}
-                                      </td>
-                                      <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{item.employee_name || <span className="text-gray-300">—</span>}</td>
-                                      <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{item.vendor || <span className="text-gray-300">—</span>}</td>
-                                      <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{MONTH_NAMES[item.month - 1]}</td>
-                                      <td className="px-3 py-2 text-right font-semibold whitespace-nowrap"
-                                        style={{ color: '#316c7f', fontVariantNumeric: 'tabular-nums' }}>
-                                        ${item.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                      </td>
-                                      <td className="px-3 py-2 text-gray-500 max-w-[140px] truncate" title={item.notes}>{item.notes || <span className="text-gray-300">—</span>}</td>
-                                      <td className="px-3 py-2 whitespace-nowrap"><StatusBadge item={item} /></td>
-                                      <td className="px-3 py-2 whitespace-nowrap">
-                                        <div className="flex items-center gap-1.5">
-                                          {returned && (
-                                            <button onClick={() => isEditing ? setEditingItemId(null) : startEditItem(item)}
-                                              className="text-xs font-bold px-2 py-0.5 rounded transition-colors whitespace-nowrap"
-                                              style={{ background: isEditing ? '#f3f4f6' : 'rgba(49,108,127,.1)', color: isEditing ? '#6b7280' : '#316c7f' }}
-                                              title="Edit this item">
-                                              {isEditing ? '✕ Cancel' : '✎ Edit'}
-                                            </button>
-                                          )}
-                                          {canSubmit && !isEditing && (
-                                            <button onClick={() => handleSubmitItem(item)}
-                                              disabled={submittingId === item.id}
-                                              className="text-xs font-bold px-2 py-0.5 rounded transition-colors whitespace-nowrap"
-                                              style={{ background: 'rgba(49,108,127,.1)', color: '#316c7f' }}
-                                              title="Submit for approval">
-                                              {submittingId === item.id ? '…' : '↑ Submit'}
-                                            </button>
-                                          )}
-                                          {item.status === 'submitted' && (
-                                            <button onClick={() => handleUnsubmitItem(item)}
-                                              className="text-xs text-amber-600 hover:text-amber-700 transition-colors whitespace-nowrap"
-                                              style={{ background: 'none', border: 'none', cursor: 'pointer' }}
-                                              title="Recall to draft">
-                                              ↩ Unsubmit
-                                            </button>
-                                          )}
-                                          {item.status === 'approved' && isAdmin && (<>
-                                            <button onClick={() => {
-                                              const opening = adminEditItemId !== item.id
-                                              setAdminEditItemId(opening ? item.id : null)
-                                              if (opening) { setAdminEditItemForm({ amount: String(item.amount), admin_note: '' }); setRecallingItemId(null) }
-                                            }}
-                                              className="text-xs font-bold px-2 py-0.5 rounded transition-colors whitespace-nowrap"
-                                              style={{ background: adminEditItemId === item.id ? '#f3f4f6' : 'rgba(49,108,127,.1)', color: adminEditItemId === item.id ? '#6b7280' : '#316c7f', border: 'none', cursor: 'pointer' }}
-                                              title="Edit amount on approved item">
-                                              {adminEditItemId === item.id ? '✕ Cancel' : '✎ Edit'}
-                                            </button>
-                                            <button onClick={() => {
-                                              const opening = recallingItemId !== item.id
-                                              setRecallingItemId(opening ? item.id : null)
-                                              if (opening) { setRecallItemNote(''); setAdminEditItemId(null) }
-                                            }}
-                                              className="text-xs text-amber-600 hover:text-amber-700 transition-colors whitespace-nowrap"
-                                              style={{ background: 'none', border: 'none', cursor: 'pointer' }}
-                                              title="Recall item back to director">
-                                              ↩ Recall
-                                            </button>
-                                          </>)}
-                                          {canDelete && (
-                                            <button onClick={() => handleDeleteItem(item)}
-                                              className="text-gray-300 hover:text-red-500 transition-colors"
-                                              title="Delete item">
-                                              <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
-                                                <path d="M2 4h11M5 4V2.5h5V4M6 7v4M9 7v4M3 4l.7 8.5A1 1 0 004.7 13.5h5.6a1 1 0 001-.9L12 4"
-                                                  stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-                                              </svg>
-                                            </button>
-                                          )}
-                                        </div>
-                                      </td>
-                                    </tr>
-                                    {adminEditItemId === item.id && (
-                                      <tr className="border-t border-blue-100">
-                                        <td colSpan={8} className="px-3 py-3" style={{ background: '#f0f7fa' }}>
-                                          <div className="flex flex-wrap gap-2 items-end">
-                                            <div className="flex flex-col gap-1">
-                                              <label className="text-xs font-semibold text-gray-500">New Amount <span style={{ color: '#ff930c' }}>*</span></label>
-                                              <input type="number" step="0.01" min="0" autoFocus
-                                                value={adminEditItemForm.amount}
-                                                onChange={e => setAdminEditItemForm(f => ({ ...f, amount: e.target.value }))}
-                                                className="input-field" style={{ width: 120 }} />
+                                        {/* Individual month rows */}
+                                        {!collapsed && groupItems.map((gItem, gIdx) => {
+                                          const past = isPastMonth(gItem.month)
+                                          const canDelete = (gItem.status === 'draft' && !past) || gItem.status === 'returned'
+                                          const canSubmit = windowOpen && (gItem.status === 'draft' || gItem.status === 'returned') && !past
+                                          const returned = gItem.status === 'returned'
+                                          const isEditing = editingItemId === gItem.id
+                                          return (
+                                            <React.Fragment key={gItem.id}>
+                                              <tr className="border-t border-gray-100"
+                                                style={{ background: returned ? '#fff7f7' : gIdx % 2 === 0 ? '#fafcfc' : 'rgba(240,247,250,.4)' }}>
+                                                <td className="px-3 py-2 text-gray-600 max-w-[180px] truncate" style={{ paddingLeft: 28 }} title={gItem.description}>
+                                                  {gItem.description}
+                                                  {returned && gItem.return_comment && (
+                                                    <div className="text-xs text-red-400 font-normal truncate" title={gItem.return_comment}>↩ {gItem.return_comment}</div>
+                                                  )}
+                                                </td>
+                                                <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{gItem.employee_name || <span className="text-gray-300">—</span>}</td>
+                                                <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{gItem.vendor || <span className="text-gray-300">—</span>}</td>
+                                                <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{MONTH_NAMES[gItem.month - 1]}</td>
+                                                <td className="px-3 py-2 text-right font-semibold whitespace-nowrap"
+                                                  style={{ color: '#316c7f', fontVariantNumeric: 'tabular-nums' }}>
+                                                  ${gItem.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                </td>
+                                                <td className="px-3 py-2 text-gray-500 max-w-[140px] truncate" title={gItem.notes}>{gItem.notes || <span className="text-gray-300">—</span>}</td>
+                                                <td className="px-3 py-2 whitespace-nowrap"><StatusBadge item={gItem} /></td>
+                                                <td className="px-3 py-2 whitespace-nowrap">
+                                                  <div className="flex items-center gap-1.5">
+                                                    {canDelete && (
+                                                      <button onClick={() => isEditing ? setEditingItemId(null) : startEditItem(gItem)}
+                                                        className="text-xs font-bold px-2 py-0.5 rounded transition-colors whitespace-nowrap"
+                                                        style={{ background: isEditing ? '#f3f4f6' : 'rgba(49,108,127,.1)', color: isEditing ? '#6b7280' : '#316c7f' }}
+                                                        title="Edit this month">
+                                                        {isEditing ? '✕' : '✎'}
+                                                      </button>
+                                                    )}
+                                                    {canSubmit && !isEditing && (
+                                                      <button onClick={() => handleSubmitItem(gItem)}
+                                                        disabled={submittingId === gItem.id}
+                                                        className="text-xs font-bold px-2 py-0.5 rounded transition-colors whitespace-nowrap"
+                                                        style={{ background: 'rgba(49,108,127,.1)', color: '#316c7f' }}
+                                                        title="Submit this month">
+                                                        {submittingId === gItem.id ? '…' : '↑'}
+                                                      </button>
+                                                    )}
+                                                    {gItem.status === 'submitted' && (
+                                                      <button onClick={() => handleUnsubmitItem(gItem)}
+                                                        className="text-xs text-amber-600 hover:text-amber-700 transition-colors whitespace-nowrap"
+                                                        style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+                                                        title="Recall to draft">↩</button>
+                                                    )}
+                                                    {canDelete && !isEditing && (
+                                                      <button onClick={() => handleDeleteItem(gItem)}
+                                                        className="text-gray-300 hover:text-red-500 transition-colors"
+                                                        title="Delete this month">
+                                                        <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+                                                          <path d="M2 4h11M5 4V2.5h5V4M6 7v4M9 7v4M3 4l.7 8.5A1 1 0 004.7 13.5h5.6a1 1 0 001-.9L12 4"
+                                                            stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+                                                        </svg>
+                                                      </button>
+                                                    )}
+                                                  </div>
+                                                </td>
+                                              </tr>
+                                              {isEditing && (
+                                                <tr className="border-t border-red-100">
+                                                  <td colSpan={8} className="px-3 py-3" style={{ background: '#fff5f5' }}>
+                                                    <div className="flex flex-wrap gap-2 items-end">
+                                                      <div className="flex flex-col gap-1">
+                                                        <label className="text-xs font-semibold text-gray-500">Description <span style={{ color: '#ff930c' }}>*</span></label>
+                                                        <input type="text" value={editItemForm.description}
+                                                          onChange={e => setEditItemForm(f => ({ ...f, description: e.target.value }))}
+                                                          className="input-field" style={{ width: 200 }} autoFocus />
+                                                      </div>
+                                                      <div className="flex flex-col gap-1">
+                                                        <label className="text-xs font-semibold text-gray-500">Employee</label>
+                                                        <input type="text" value={editItemForm.employee_name}
+                                                          onChange={e => setEditItemForm(f => ({ ...f, employee_name: e.target.value }))}
+                                                          className="input-field" style={{ width: 130 }} />
+                                                      </div>
+                                                      <div className="flex flex-col gap-1">
+                                                        <label className="text-xs font-semibold text-gray-500">{acct.account_code.startsWith('609') ? 'Client' : 'Vendor'}</label>
+                                                        <input type="text" value={editItemForm.vendor}
+                                                          onChange={e => setEditItemForm(f => ({ ...f, vendor: e.target.value }))}
+                                                          className="input-field" style={{ width: 140 }} />
+                                                      </div>
+                                                      <div className="flex flex-col gap-1">
+                                                        <label className="text-xs font-semibold text-gray-500">Notes</label>
+                                                        <input type="text" value={editItemForm.notes}
+                                                          onChange={e => setEditItemForm(f => ({ ...f, notes: e.target.value }))}
+                                                          className="input-field" style={{ width: 150 }} />
+                                                      </div>
+                                                      <div className="flex flex-col gap-1">
+                                                        <label className="text-xs font-semibold text-gray-500">Month <span style={{ color: '#ff930c' }}>*</span></label>
+                                                        <select value={editItemForm.month}
+                                                          onChange={e => setEditItemForm(f => ({ ...f, month: Number(e.target.value) }))}
+                                                          className="input-field" style={{ width: 110 }}>
+                                                          {MONTH_NAMES.map((m, i) => (
+                                                            <option key={i} value={i + 1}>{m}</option>
+                                                          ))}
+                                                        </select>
+                                                      </div>
+                                                      <div className="flex flex-col gap-1">
+                                                        <label className="text-xs font-semibold text-gray-500">Amount <span style={{ color: '#ff930c' }}>*</span></label>
+                                                        <input type="number" step="0.01" min="0" value={editItemForm.amount}
+                                                          onChange={e => setEditItemForm(f => ({ ...f, amount: e.target.value }))}
+                                                          className="input-field" style={{ width: 110 }} />
+                                                      </div>
+                                                      <div className="flex gap-2 items-center mt-1">
+                                                        <button onClick={() => handleSaveItemEdit(gItem)}
+                                                          disabled={editItemSaving}
+                                                          className="text-xs font-bold px-3 py-1.5 rounded transition-colors whitespace-nowrap"
+                                                          style={{ background: '#316c7f', color: '#fff' }}>
+                                                          {editItemSaving ? 'Saving…' : '✓ Save Changes'}
+                                                        </button>
+                                                        <button onClick={() => setEditingItemId(null)}
+                                                          className="text-xs text-gray-400 hover:text-gray-600 transition-colors whitespace-nowrap"
+                                                          style={{ background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
+                                                      </div>
+                                                    </div>
+                                                  </td>
+                                                </tr>
+                                              )}
+                                            </React.Fragment>
+                                          )
+                                        })}
+                                      </React.Fragment>
+                                    )]
+                                  } else {
+                                    // Standalone (non-recurring) item
+                                    const past = isPastMonth(item.month)
+                                    const canDelete = (item.status === 'draft' && !past) || item.status === 'returned'
+                                    const canSubmit = windowOpen && (item.status === 'draft' || item.status === 'returned') && !past
+                                    const returned = item.status === 'returned'
+                                    const isEditing = editingItemId === item.id
+                                    const idx = standaloneIdx++
+                                    return [(
+                                      <React.Fragment key={item.id}>
+                                        <tr className="border-t border-gray-100"
+                                          style={{ background: returned ? '#fff7f7' : idx % 2 === 0 ? '#fff' : 'rgba(0,0,0,.015)' }}>
+                                          <td className="px-3 py-2 text-gray-800 font-medium max-w-[180px] truncate" title={item.description}>
+                                            {item.description}
+                                            {returned && item.return_comment && (
+                                              <div className="text-xs text-red-400 font-normal truncate" title={item.return_comment}>
+                                                ↩ {item.return_comment}
+                                              </div>
+                                            )}
+                                          </td>
+                                          <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{item.employee_name || <span className="text-gray-300">—</span>}</td>
+                                          <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{item.vendor || <span className="text-gray-300">—</span>}</td>
+                                          <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{MONTH_NAMES[item.month - 1]}</td>
+                                          <td className="px-3 py-2 text-right font-semibold whitespace-nowrap"
+                                            style={{ color: '#316c7f', fontVariantNumeric: 'tabular-nums' }}>
+                                            ${item.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                          </td>
+                                          <td className="px-3 py-2 text-gray-500 max-w-[140px] truncate" title={item.notes}>{item.notes || <span className="text-gray-300">—</span>}</td>
+                                          <td className="px-3 py-2 whitespace-nowrap"><StatusBadge item={item} /></td>
+                                          <td className="px-3 py-2 whitespace-nowrap">
+                                            <div className="flex items-center gap-1.5">
+                                              {canDelete && (
+                                                <button onClick={() => isEditing ? setEditingItemId(null) : startEditItem(item)}
+                                                  className="text-xs font-bold px-2 py-0.5 rounded transition-colors whitespace-nowrap"
+                                                  style={{ background: isEditing ? '#f3f4f6' : 'rgba(49,108,127,.1)', color: isEditing ? '#6b7280' : '#316c7f' }}
+                                                  title="Edit this item">
+                                                  {isEditing ? '✕ Cancel' : '✎ Edit'}
+                                                </button>
+                                              )}
+                                              {canSubmit && !isEditing && (
+                                                <button onClick={() => handleSubmitItem(item)}
+                                                  disabled={submittingId === item.id}
+                                                  className="text-xs font-bold px-2 py-0.5 rounded transition-colors whitespace-nowrap"
+                                                  style={{ background: 'rgba(49,108,127,.1)', color: '#316c7f' }}
+                                                  title="Submit for approval">
+                                                  {submittingId === item.id ? '…' : '↑ Submit'}
+                                                </button>
+                                              )}
+                                              {item.status === 'submitted' && (
+                                                <button onClick={() => handleUnsubmitItem(item)}
+                                                  className="text-xs text-amber-600 hover:text-amber-700 transition-colors whitespace-nowrap"
+                                                  style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+                                                  title="Recall to draft">
+                                                  ↩ Unsubmit
+                                                </button>
+                                              )}
+                                              {item.status === 'approved' && isAdmin && (<>
+                                                <button onClick={() => {
+                                                  const opening = adminEditItemId !== item.id
+                                                  setAdminEditItemId(opening ? item.id : null)
+                                                  if (opening) { setAdminEditItemForm({ amount: String(item.amount), admin_note: '' }); setRecallingItemId(null) }
+                                                }}
+                                                  className="text-xs font-bold px-2 py-0.5 rounded transition-colors whitespace-nowrap"
+                                                  style={{ background: adminEditItemId === item.id ? '#f3f4f6' : 'rgba(49,108,127,.1)', color: adminEditItemId === item.id ? '#6b7280' : '#316c7f', border: 'none', cursor: 'pointer' }}
+                                                  title="Edit amount on approved item">
+                                                  {adminEditItemId === item.id ? '✕ Cancel' : '✎ Edit'}
+                                                </button>
+                                                <button onClick={() => {
+                                                  const opening = recallingItemId !== item.id
+                                                  setRecallingItemId(opening ? item.id : null)
+                                                  if (opening) { setRecallItemNote(''); setAdminEditItemId(null) }
+                                                }}
+                                                  className="text-xs text-amber-600 hover:text-amber-700 transition-colors whitespace-nowrap"
+                                                  style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+                                                  title="Recall item back to director">
+                                                  ↩ Recall
+                                                </button>
+                                              </>)}
+                                              {canDelete && (
+                                                <button onClick={() => handleDeleteItem(item)}
+                                                  className="text-gray-300 hover:text-red-500 transition-colors"
+                                                  title="Delete item">
+                                                  <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+                                                    <path d="M2 4h11M5 4V2.5h5V4M6 7v4M9 7v4M3 4l.7 8.5A1 1 0 004.7 13.5h5.6a1 1 0 001-.9L12 4"
+                                                      stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+                                                  </svg>
+                                                </button>
+                                              )}
                                             </div>
-                                            <div className="flex flex-col gap-1" style={{ flex: 1, minWidth: 220 }}>
-                                              <label className="text-xs font-semibold text-gray-500">Reason for change <span style={{ color: '#ff930c' }}>*</span></label>
-                                              <input type="text" placeholder="e.g. vendor quoted lower price"
-                                                value={adminEditItemForm.admin_note}
-                                                onChange={e => setAdminEditItemForm(f => ({ ...f, admin_note: e.target.value }))}
-                                                className="input-field" style={{ width: '100%' }} />
-                                            </div>
-                                            <div className="flex gap-2 items-center mt-1">
-                                              <button onClick={() => handleAdminEditItem(item, parseFloat(adminEditItemForm.amount), adminEditItemForm.admin_note)}
-                                                disabled={adminEditItemSaving}
-                                                className="text-xs font-bold px-3 py-1.5 rounded whitespace-nowrap"
-                                                style={{ background: '#316c7f', color: '#fff', border: 'none', cursor: 'pointer' }}>
-                                                {adminEditItemSaving ? 'Saving…' : '✓ Update Amount'}
-                                              </button>
-                                              <button onClick={() => setAdminEditItemId(null)}
-                                                className="text-xs text-gray-400 hover:text-gray-600 whitespace-nowrap"
-                                                style={{ background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
-                                            </div>
-                                          </div>
-                                        </td>
-                                      </tr>
-                                    )}
-                                    {recallingItemId === item.id && (
-                                      <tr className="border-t border-amber-100">
-                                        <td colSpan={8} className="px-3 py-3" style={{ background: '#fffbeb' }}>
-                                          <div className="flex flex-wrap gap-2 items-end">
-                                            <div className="flex flex-col gap-1" style={{ flex: 1, minWidth: 260 }}>
-                                              <label className="text-xs font-semibold text-gray-500">Reason for recalling <span style={{ color: '#ff930c' }}>*</span></label>
-                                              <input type="text" placeholder="e.g. budget overrun — please revise amount" autoFocus
-                                                value={recallItemNote}
-                                                onChange={e => setRecallItemNote(e.target.value)}
-                                                className="input-field" style={{ width: '100%' }} />
-                                            </div>
-                                            <div className="flex gap-2 items-center mt-1">
-                                              <button onClick={() => handleRecallItem(item, recallItemNote)}
-                                                disabled={recallingItemId === item.id && !recallItemNote.trim()}
-                                                className="text-xs font-bold px-3 py-1.5 rounded whitespace-nowrap"
-                                                style={{ background: '#d97706', color: '#fff', border: 'none', cursor: 'pointer' }}>
-                                                ↩ Confirm Recall
-                                              </button>
-                                              <button onClick={() => setRecallingItemId(null)}
-                                                className="text-xs text-gray-400 hover:text-gray-600 whitespace-nowrap"
-                                                style={{ background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
-                                            </div>
-                                          </div>
-                                        </td>
-                                      </tr>
-                                    )}
-                                    {isEditing && (
-                                      <tr className="border-t border-red-100">
-                                        <td colSpan={8} className="px-3 py-3" style={{ background: '#fff5f5' }}>
-                                          <div className="flex flex-wrap gap-2 items-end">
-                                            <div className="flex flex-col gap-1">
-                                              <label className="text-xs font-semibold text-gray-500">Description <span style={{ color: '#ff930c' }}>*</span></label>
-                                              <input type="text" value={editItemForm.description}
-                                                onChange={e => setEditItemForm(f => ({ ...f, description: e.target.value }))}
-                                                className="input-field" style={{ width: 200 }} autoFocus />
-                                            </div>
-                                            <div className="flex flex-col gap-1">
-                                              <label className="text-xs font-semibold text-gray-500">Employee</label>
-                                              <input type="text" value={editItemForm.employee_name}
-                                                onChange={e => setEditItemForm(f => ({ ...f, employee_name: e.target.value }))}
-                                                className="input-field" style={{ width: 130 }} />
-                                            </div>
-                                            <div className="flex flex-col gap-1">
-                                              <label className="text-xs font-semibold text-gray-500">{acct.account_code.startsWith('609') ? 'Client' : 'Vendor'}</label>
-                                              <input type="text" value={editItemForm.vendor}
-                                                onChange={e => setEditItemForm(f => ({ ...f, vendor: e.target.value }))}
-                                                className="input-field" style={{ width: 140 }} />
-                                            </div>
-                                            <div className="flex flex-col gap-1">
-                                              <label className="text-xs font-semibold text-gray-500">Notes</label>
-                                              <input type="text" value={editItemForm.notes}
-                                                onChange={e => setEditItemForm(f => ({ ...f, notes: e.target.value }))}
-                                                className="input-field" style={{ width: 150 }} />
-                                            </div>
-                                            <div className="flex flex-col gap-1">
-                                              <label className="text-xs font-semibold text-gray-500">Month <span style={{ color: '#ff930c' }}>*</span></label>
-                                              <select value={editItemForm.month}
-                                                onChange={e => setEditItemForm(f => ({ ...f, month: Number(e.target.value) }))}
-                                                className="input-field" style={{ width: 110 }}>
-                                                {MONTH_NAMES.map((m, i) => (
-                                                  <option key={i} value={i + 1}>{m}</option>
-                                                ))}
-                                              </select>
-                                            </div>
-                                            <div className="flex flex-col gap-1">
-                                              <label className="text-xs font-semibold text-gray-500">Amount <span style={{ color: '#ff930c' }}>*</span></label>
-                                              <input type="number" step="0.01" min="0" value={editItemForm.amount}
-                                                onChange={e => setEditItemForm(f => ({ ...f, amount: e.target.value }))}
-                                                className="input-field" style={{ width: 110 }} />
-                                            </div>
-                                            <div className="flex gap-2 items-center mt-1">
-                                              <button onClick={() => handleSaveItemEdit(item)}
-                                                disabled={editItemSaving}
-                                                className="text-xs font-bold px-3 py-1.5 rounded transition-colors whitespace-nowrap"
-                                                style={{ background: '#316c7f', color: '#fff' }}>
-                                                {editItemSaving ? 'Saving…' : '✓ Save Changes'}
-                                              </button>
-                                              <button onClick={() => setEditingItemId(null)}
-                                                className="text-xs text-gray-400 hover:text-gray-600 transition-colors whitespace-nowrap"
-                                                style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
-                                                Cancel
-                                              </button>
-                                            </div>
-                                          </div>
-                                        </td>
-                                      </tr>
-                                    )}
-                                  </React.Fragment>
-                                )
-                              })}
+                                          </td>
+                                        </tr>
+                                        {adminEditItemId === item.id && (
+                                          <tr className="border-t border-blue-100">
+                                            <td colSpan={8} className="px-3 py-3" style={{ background: '#f0f7fa' }}>
+                                              <div className="flex flex-wrap gap-2 items-end">
+                                                <div className="flex flex-col gap-1">
+                                                  <label className="text-xs font-semibold text-gray-500">New Amount <span style={{ color: '#ff930c' }}>*</span></label>
+                                                  <input type="number" step="0.01" min="0" autoFocus
+                                                    value={adminEditItemForm.amount}
+                                                    onChange={e => setAdminEditItemForm(f => ({ ...f, amount: e.target.value }))}
+                                                    className="input-field" style={{ width: 120 }} />
+                                                </div>
+                                                <div className="flex flex-col gap-1" style={{ flex: 1, minWidth: 220 }}>
+                                                  <label className="text-xs font-semibold text-gray-500">Reason for change <span style={{ color: '#ff930c' }}>*</span></label>
+                                                  <input type="text" placeholder="e.g. vendor quoted lower price"
+                                                    value={adminEditItemForm.admin_note}
+                                                    onChange={e => setAdminEditItemForm(f => ({ ...f, admin_note: e.target.value }))}
+                                                    className="input-field" style={{ width: '100%' }} />
+                                                </div>
+                                                <div className="flex gap-2 items-center mt-1">
+                                                  <button onClick={() => handleAdminEditItem(item, parseFloat(adminEditItemForm.amount), adminEditItemForm.admin_note)}
+                                                    disabled={adminEditItemSaving}
+                                                    className="text-xs font-bold px-3 py-1.5 rounded whitespace-nowrap"
+                                                    style={{ background: '#316c7f', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                                                    {adminEditItemSaving ? 'Saving…' : '✓ Update Amount'}
+                                                  </button>
+                                                  <button onClick={() => setAdminEditItemId(null)}
+                                                    className="text-xs text-gray-400 hover:text-gray-600 whitespace-nowrap"
+                                                    style={{ background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
+                                                </div>
+                                              </div>
+                                            </td>
+                                          </tr>
+                                        )}
+                                        {recallingItemId === item.id && (
+                                          <tr className="border-t border-amber-100">
+                                            <td colSpan={8} className="px-3 py-3" style={{ background: '#fffbeb' }}>
+                                              <div className="flex flex-wrap gap-2 items-end">
+                                                <div className="flex flex-col gap-1" style={{ flex: 1, minWidth: 260 }}>
+                                                  <label className="text-xs font-semibold text-gray-500">Reason for recalling <span style={{ color: '#ff930c' }}>*</span></label>
+                                                  <input type="text" placeholder="e.g. budget overrun — please revise amount" autoFocus
+                                                    value={recallItemNote}
+                                                    onChange={e => setRecallItemNote(e.target.value)}
+                                                    className="input-field" style={{ width: '100%' }} />
+                                                </div>
+                                                <div className="flex gap-2 items-center mt-1">
+                                                  <button onClick={() => handleRecallItem(item, recallItemNote)}
+                                                    disabled={recallingItemId === item.id && !recallItemNote.trim()}
+                                                    className="text-xs font-bold px-3 py-1.5 rounded whitespace-nowrap"
+                                                    style={{ background: '#d97706', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                                                    ↩ Confirm Recall
+                                                  </button>
+                                                  <button onClick={() => setRecallingItemId(null)}
+                                                    className="text-xs text-gray-400 hover:text-gray-600 whitespace-nowrap"
+                                                    style={{ background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
+                                                </div>
+                                              </div>
+                                            </td>
+                                          </tr>
+                                        )}
+                                        {isEditing && (
+                                          <tr className="border-t border-red-100">
+                                            <td colSpan={8} className="px-3 py-3" style={{ background: '#fff5f5' }}>
+                                              <div className="flex flex-wrap gap-2 items-end">
+                                                <div className="flex flex-col gap-1">
+                                                  <label className="text-xs font-semibold text-gray-500">Description <span style={{ color: '#ff930c' }}>*</span></label>
+                                                  <input type="text" value={editItemForm.description}
+                                                    onChange={e => setEditItemForm(f => ({ ...f, description: e.target.value }))}
+                                                    className="input-field" style={{ width: 200 }} autoFocus />
+                                                </div>
+                                                <div className="flex flex-col gap-1">
+                                                  <label className="text-xs font-semibold text-gray-500">Employee</label>
+                                                  <input type="text" value={editItemForm.employee_name}
+                                                    onChange={e => setEditItemForm(f => ({ ...f, employee_name: e.target.value }))}
+                                                    className="input-field" style={{ width: 130 }} />
+                                                </div>
+                                                <div className="flex flex-col gap-1">
+                                                  <label className="text-xs font-semibold text-gray-500">{acct.account_code.startsWith('609') ? 'Client' : 'Vendor'}</label>
+                                                  <input type="text" value={editItemForm.vendor}
+                                                    onChange={e => setEditItemForm(f => ({ ...f, vendor: e.target.value }))}
+                                                    className="input-field" style={{ width: 140 }} />
+                                                </div>
+                                                <div className="flex flex-col gap-1">
+                                                  <label className="text-xs font-semibold text-gray-500">Notes</label>
+                                                  <input type="text" value={editItemForm.notes}
+                                                    onChange={e => setEditItemForm(f => ({ ...f, notes: e.target.value }))}
+                                                    className="input-field" style={{ width: 150 }} />
+                                                </div>
+                                                <div className="flex flex-col gap-1">
+                                                  <label className="text-xs font-semibold text-gray-500">Month <span style={{ color: '#ff930c' }}>*</span></label>
+                                                  <select value={editItemForm.month}
+                                                    onChange={e => setEditItemForm(f => ({ ...f, month: Number(e.target.value) }))}
+                                                    className="input-field" style={{ width: 110 }}>
+                                                    {MONTH_NAMES.map((m, i) => (
+                                                      <option key={i} value={i + 1}>{m}</option>
+                                                    ))}
+                                                  </select>
+                                                </div>
+                                                <div className="flex flex-col gap-1">
+                                                  <label className="text-xs font-semibold text-gray-500">Amount <span style={{ color: '#ff930c' }}>*</span></label>
+                                                  <input type="number" step="0.01" min="0" value={editItemForm.amount}
+                                                    onChange={e => setEditItemForm(f => ({ ...f, amount: e.target.value }))}
+                                                    className="input-field" style={{ width: 110 }} />
+                                                </div>
+                                                <div className="flex gap-2 items-center mt-1">
+                                                  <button onClick={() => handleSaveItemEdit(item)}
+                                                    disabled={editItemSaving}
+                                                    className="text-xs font-bold px-3 py-1.5 rounded transition-colors whitespace-nowrap"
+                                                    style={{ background: '#316c7f', color: '#fff' }}>
+                                                    {editItemSaving ? 'Saving…' : '✓ Save Changes'}
+                                                  </button>
+                                                  <button onClick={() => setEditingItemId(null)}
+                                                    className="text-xs text-gray-400 hover:text-gray-600 transition-colors whitespace-nowrap"
+                                                    style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                                                    Cancel
+                                                  </button>
+                                                </div>
+                                              </div>
+                                            </td>
+                                          </tr>
+                                        )}
+                                      </React.Fragment>
+                                    )]
+                                  }
+                                })
+                              })()}
                             </tbody>
                           </table>
                         </div>
@@ -3422,7 +3747,7 @@ export default function DashboardPage() {
                                   <td className="px-3 py-2 whitespace-nowrap"><StatusBadge item={hire} /></td>
                                   <td className="px-3 py-2 whitespace-nowrap">
                                     <div className="flex items-center gap-1.5">
-                                      {hire.status === 'returned' && (
+                                      {canDelete && (
                                         <button onClick={() => isEditingHire ? setEditingHireId(null) : startEditHire(hire)}
                                           className="text-xs font-bold px-2 py-0.5 rounded transition-colors whitespace-nowrap"
                                           style={{ background: isEditingHire ? '#f3f4f6' : 'rgba(49,108,127,.1)', color: isEditingHire ? '#6b7280' : '#316c7f' }}>
@@ -3711,7 +4036,7 @@ export default function DashboardPage() {
                                   <td className="px-3 py-2 whitespace-nowrap"><StatusBadge item={cert} /></td>
                                   <td className="px-3 py-2 whitespace-nowrap">
                                     <div className="flex items-center gap-1.5">
-                                      {cert.status === 'returned' && (
+                                      {canDelete && (
                                         <button onClick={() => isEditingCert ? setEditingCertId(null) : startEditCert(cert)}
                                           className="text-xs font-bold px-2 py-0.5 rounded transition-colors whitespace-nowrap"
                                           style={{ background: isEditingCert ? '#f3f4f6' : 'rgba(49,108,127,.1)', color: isEditingCert ? '#6b7280' : '#316c7f' }}>
