@@ -1279,7 +1279,7 @@ export default function DashboardPage() {
         start_month: Number(hireForm.start_month),
         hire_date: hireForm.hire_date || null,
         benefits_plan: hireForm.benefits_plan || null,
-        retirement_pct: hireForm.retirement_pct ? Number(hireForm.retirement_pct) : null,
+        retirement_pct: hireForm.retirement_pct ? Number(hireForm.retirement_pct) / 100 : null,
         phone_allowance: Number(hireForm.phone_allowance || 0),
         bonus_amt: hireForm.bonus_amt ? Number(hireForm.bonus_amt) : null,
         bonus_month: hireForm.bonus_month ? Number(hireForm.bonus_month) : null,
@@ -1418,6 +1418,7 @@ export default function DashboardPage() {
 
   async function handleAddCert() {
     if (!certForm.employee_name.trim()) { setActionMsg('Employee name is required.'); return }
+    if (!certForm.ee_id.trim()) { setActionMsg('EE ID is required.'); return }
     if (!certForm.certification_name) { setActionMsg('Please select a certification.'); return }
     const raise = Number(certForm.hourly_raise)
     if (!raise || raise <= 0) { setActionMsg('Certification raise could not be calculated.'); return }
@@ -4228,7 +4229,7 @@ export default function DashboardPage() {
                         </div>
                         <div className="flex flex-col gap-1">
                           <label className="text-xs font-semibold text-gray-500">EE ID</label>
-                          <input type="text" placeholder="Optional" value={certForm.ee_id}
+                          <input type="text" placeholder="Required" value={certForm.ee_id}
                             onChange={e => setCertForm(f => ({ ...f, ee_id: e.target.value }))}
                             className="input-field" style={{ width: 110 }} />
                         </div>
