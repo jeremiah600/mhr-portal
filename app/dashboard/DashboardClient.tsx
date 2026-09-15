@@ -77,7 +77,9 @@ interface CertRaise {
   dept_code: string
   employee_name: string
   ee_id: string | null
+  raise_type: 'certification' | 'open_entry'
   certification_name: string
+  raise_reason: string | null
   expected_month: number
   hourly_raise: number
   notes: string | null
@@ -153,7 +155,7 @@ const HIRE_SELECT = [
 ].join(', ')
 
 const CERT_SELECT = [
-  'id', 'dept_code', 'employee_name', 'ee_id', 'certification_name',
+  'id', 'dept_code', 'employee_name', 'ee_id', 'raise_type', 'certification_name', 'raise_reason',
   'expected_month', 'hourly_raise', 'notes', 'status', 'submitted_at',
   'approved_by_jeremiah', 'jeremiah_approved_at',
   'approved_by_joseph', 'joseph_approved_at', 'return_comment',
@@ -211,11 +213,14 @@ const emptyHireForm = () => ({
 })
 
 const emptyCertForm = () => ({
+  raise_type: 'certification' as 'certification' | 'open_entry',
   employee_name: '',
   ee_id: '',
   certification_name: '',
+  raise_reason: '',
   expected_month: 1,
   hourly_raise: '',
+  annual_raise: '',
   notes: '',
 })
 
@@ -329,10 +334,10 @@ export default function DashboardPage() {
   const [editItemForm, setEditItemForm] = useState({ description: '', employee_name: '', vendor: '', notes: '', month: 1, amount: '' })
   const [editItemSaving, setEditItemSaving] = useState(false)
   const [editingHireId, setEditingHireId] = useState<string | null>(null)
-  const [editHireForm, setEditHireForm] = useState({ position_title: '', anticipated_name: '', annual_pay: '', start_month: 1, notes: '' })
+  const [editHireForm, setEditHireForm] = useState({ position_title: '', anticipated_name: '', annual_pay: '', start_month: 1, retirement_pct: '', phone_allowance: '', benefits_plan: '', bonus_amt: '', bonus_month: '1', commission: '', overtime: '', hsa: '', notes: '' })
   const [editHireSaving, setEditHireSaving] = useState(false)
   const [editingCertId, setEditingCertId] = useState<string | null>(null)
-  const [editCertForm, setEditCertForm] = useState({ employee_name: '', ee_id: '', certification_name: '', expected_month: 1, hourly_raise: '', notes: '' })
+  const [editCertForm, setEditCertForm] = useState({ raise_type: 'certification' as 'certification' | 'open_entry', employee_name: '', ee_id: '', certification_name: '', raise_reason: '', expected_month: 1, hourly_raise: '', annual_raise: '', notes: '' })
   const [editCertSaving, setEditCertSaving] = useState(false)
 
   // Admin recall state (Option A — pull back approved item to director)
@@ -537,7 +542,9 @@ export default function DashboardPage() {
       dept_code: r.dept_code as string,
       employee_name: r.employee_name as string,
       ee_id: r.ee_id as string | null,
+      raise_type: (r.raise_type as CertRaise['raise_type']) ?? 'certification',
       certification_name: r.certification_name as string,
+      raise_reason: r.raise_reason as string | null,
       expected_month: Number(r.expected_month),
       hourly_raise: Number(r.hourly_raise),
       notes: r.notes as string | null,
@@ -686,7 +693,9 @@ export default function DashboardPage() {
       dept_code: r.dept_code as string,
       employee_name: r.employee_name as string,
       ee_id: r.ee_id as string | null,
+      raise_type: (r.raise_type ?? 'certification') as CertRaise['raise_type'],
       certification_name: r.certification_name as string,
+      raise_reason: r.raise_reason as string | null,
       expected_month: Number(r.expected_month),
       hourly_raise: Number(r.hourly_raise),
       notes: r.notes as string | null,
@@ -1330,6 +1339,14 @@ export default function DashboardPage() {
       anticipated_name: hire.anticipated_name,
       annual_pay: String(hire.annual_pay),
       start_month: hire.start_month,
+      retirement_pct: hire.retirement_pct != null ? String(hire.retirement_pct * 100) : '',
+      phone_allowance: hire.phone_allowance ? String(hire.phone_allowance) : '',
+      benefits_plan: hire.benefits_plan ?? '',
+      bonus_amt: hire.bonus_amt != null ? String(hire.bonus_amt) : '',
+      bonus_month: hire.bonus_month != null ? String(hire.bonus_month) : '1',
+      commission: hire.commission ? String(hire.commission) : '',
+      overtime: hire.overtime ? String(hire.overtime) : '',
+      hsa: hire.hsa ? String(hire.hsa) : '',
       notes: hire.notes ?? '',
     })
   }
@@ -1339,12 +1356,27 @@ export default function DashboardPage() {
     if (!editHireForm.position_title.trim()) { setActionMsg('Position title is required.'); return }
     if (isNaN(annual_pay) || annual_pay <= 0) { setActionMsg('Enter a valid annual pay.'); return }
     setEditHireSaving(true)
+    const retirement_pct = editHireForm.retirement_pct ? Number(editHireForm.retirement_pct) / 100 : null
+    const phone_allowance = editHireForm.phone_allowance ? Number(editHireForm.phone_allowance) : 0
+    const bonus_amt = editHireForm.bonus_amt ? Number(editHireForm.bonus_amt) : null
+    const bonus_month = editHireForm.bonus_amt ? Number(editHireForm.bonus_month) : null
+    const commission = editHireForm.commission ? Number(editHireForm.commission) : 0
+    const overtime = editHireForm.overtime ? Number(editHireForm.overtime) : 0
+    const hsa = editHireForm.hsa ? Number(editHireForm.hsa) : 0
     const { error } = await supabase.from('budget_new_hires')
       .update({
         position_title: editHireForm.position_title.trim(),
         anticipated_name: editHireForm.anticipated_name.trim(),
         annual_pay,
         start_month: editHireForm.start_month,
+        retirement_pct,
+        phone_allowance,
+        benefits_plan: editHireForm.benefits_plan || null,
+        bonus_amt,
+        bonus_month,
+        commission,
+        overtime,
+        hsa,
         notes: editHireForm.notes.trim() || null,
         status: 'draft',
         return_comment: null,
@@ -1352,7 +1384,7 @@ export default function DashboardPage() {
       .eq('id', hire.id)
     if (error) { setActionMsg(`Error: ${error.message}`); setEditHireSaving(false); return }
     setNewHires(prev => prev.map(h => h.id === hire.id
-      ? { ...h, position_title: editHireForm.position_title.trim(), anticipated_name: editHireForm.anticipated_name.trim(), annual_pay, start_month: editHireForm.start_month, notes: editHireForm.notes.trim() || null, status: 'draft', return_comment: null }
+      ? { ...h, position_title: editHireForm.position_title.trim(), anticipated_name: editHireForm.anticipated_name.trim(), annual_pay, start_month: editHireForm.start_month, retirement_pct, phone_allowance, benefits_plan: editHireForm.benefits_plan || null, bonus_amt, bonus_month, commission, overtime, hsa, notes: editHireForm.notes.trim() || null, status: 'draft', return_comment: null }
       : h))
     setEditingHireId(null)
     setEditHireSaving(false)
@@ -1419,9 +1451,11 @@ export default function DashboardPage() {
   async function handleAddCert() {
     if (!certForm.employee_name.trim()) { setActionMsg('Employee name is required.'); return }
     if (!certForm.ee_id.trim()) { setActionMsg('EE ID is required.'); return }
-    if (!certForm.certification_name) { setActionMsg('Please select a certification.'); return }
+    const isCert = certForm.raise_type === 'certification'
+    if (isCert && !certForm.certification_name) { setActionMsg('Please select a certification.'); return }
+    if (!isCert && !certForm.raise_reason.trim()) { setActionMsg('Reason for raise is required.'); return }
     const raise = Number(certForm.hourly_raise)
-    if (!raise || raise <= 0) { setActionMsg('Certification raise could not be calculated.'); return }
+    if (!raise || raise <= 0) { setActionMsg('Please enter a valid hourly or annual raise amount.'); return }
     setCertSaving(true); setActionMsg('')
     const { data, error } = await supabase
       .from('budget_cert_raises')
@@ -1430,7 +1464,9 @@ export default function DashboardPage() {
         dept_code: activeDept,
         employee_name: certForm.employee_name.trim(),
         ee_id: certForm.ee_id.trim() || null,
-        certification_name: certForm.certification_name.trim(),
+        raise_type: certForm.raise_type,
+        certification_name: isCert ? certForm.certification_name.trim() : null,
+        raise_reason: !isCert ? certForm.raise_reason.trim() : null,
         expected_month: Number(certForm.expected_month),
         hourly_raise: raise,
         notes: certForm.notes.trim() || null,
@@ -1444,7 +1480,9 @@ export default function DashboardPage() {
       const d = data as any
       const cert: CertRaise = {
         id: d.id, dept_code: d.dept_code, employee_name: d.employee_name, ee_id: d.ee_id,
-        certification_name: d.certification_name, expected_month: Number(d.expected_month),
+        raise_type: d.raise_type ?? 'certification',
+        certification_name: d.certification_name, raise_reason: d.raise_reason ?? null,
+        expected_month: Number(d.expected_month),
         hourly_raise: Number(d.hourly_raise), notes: d.notes, status: 'draft', submitted_at: null,
         approved_by_jeremiah: false, jeremiah_approved_at: null,
         approved_by_joseph: false, joseph_approved_at: null, return_comment: null,
@@ -1452,14 +1490,15 @@ export default function DashboardPage() {
       setCertRaises(prev => [...prev, cert])
       setCertForm(emptyCertForm())
       setAddingCert(false)
-      setActionMsg('✓ Cert raise saved.')
+      setActionMsg(isCert ? '✓ Cert raise saved.' : '✓ Open entry raise saved.')
     }
     setCertSaving(false)
   }
 
   async function handleDeleteCert(cert: CertRaise) {
     if (cert.status !== 'draft' && cert.status !== 'returned' && !(isAdmin && cert.status === 'approved')) { setActionMsg('Only draft or returned entries can be deleted.'); return }
-    if (!confirm(`Delete cert raise for "${cert.employee_name} — ${cert.certification_name}"?`)) return
+    const detail = cert.raise_type === 'open_entry' ? (cert.raise_reason || 'open entry') : cert.certification_name
+    if (!confirm(`Delete raise for "${cert.employee_name} — ${detail}"?`)) return
     const { error } = await supabase.from('budget_cert_raises').delete().eq('id', cert.id)
     if (error) setActionMsg(`Error: ${error.message}`)
     else { setCertRaises(prev => prev.filter(c => c.id !== cert.id)); setActionMsg('✓ Cert raise deleted.') }
@@ -1467,12 +1506,17 @@ export default function DashboardPage() {
 
   function startEditCert(cert: CertRaise) {
     setEditingCertId(cert.id)
+    const hourlyStr = String(cert.hourly_raise)
+    const annualStr = cert.hourly_raise ? String(Math.round(cert.hourly_raise * 2080 * 100) / 100) : ''
     setEditCertForm({
+      raise_type: cert.raise_type ?? 'certification',
       employee_name: cert.employee_name,
       ee_id: cert.ee_id ?? '',
-      certification_name: cert.certification_name,
+      certification_name: cert.certification_name ?? '',
+      raise_reason: cert.raise_reason ?? '',
       expected_month: cert.expected_month,
-      hourly_raise: String(cert.hourly_raise),
+      hourly_raise: hourlyStr,
+      annual_raise: annualStr,
       notes: cert.notes ?? '',
     })
   }
@@ -1480,14 +1524,19 @@ export default function DashboardPage() {
   async function handleSaveCertEdit(cert: CertRaise) {
     const hourly_raise = parseFloat(editCertForm.hourly_raise)
     if (!editCertForm.employee_name.trim()) { setActionMsg('Employee name is required.'); return }
-    if (!editCertForm.certification_name.trim()) { setActionMsg('Certification name is required.'); return }
+    if (!editCertForm.ee_id.trim()) { setActionMsg('EE ID is required.'); return }
+    const isEditCert = editCertForm.raise_type === 'certification'
+    if (isEditCert && !editCertForm.certification_name.trim()) { setActionMsg('Certification name is required.'); return }
+    if (!isEditCert && !editCertForm.raise_reason.trim()) { setActionMsg('Reason for raise is required.'); return }
     if (isNaN(hourly_raise) || hourly_raise <= 0) { setActionMsg('Enter a valid raise amount.'); return }
     setEditCertSaving(true)
     const { error } = await supabase.from('budget_cert_raises')
       .update({
         employee_name: editCertForm.employee_name.trim(),
         ee_id: editCertForm.ee_id.trim() || null,
-        certification_name: editCertForm.certification_name.trim(),
+        raise_type: editCertForm.raise_type,
+        certification_name: isEditCert ? editCertForm.certification_name.trim() : null,
+        raise_reason: !isEditCert ? editCertForm.raise_reason.trim() : null,
         expected_month: editCertForm.expected_month,
         hourly_raise,
         notes: editCertForm.notes.trim() || null,
@@ -1497,11 +1546,11 @@ export default function DashboardPage() {
       .eq('id', cert.id)
     if (error) { setActionMsg(`Error: ${error.message}`); setEditCertSaving(false); return }
     setCertRaises(prev => prev.map(c => c.id === cert.id
-      ? { ...c, employee_name: editCertForm.employee_name.trim(), ee_id: editCertForm.ee_id.trim() || null, certification_name: editCertForm.certification_name.trim(), expected_month: editCertForm.expected_month, hourly_raise, notes: editCertForm.notes.trim() || null, status: 'draft', return_comment: null }
+      ? { ...c, employee_name: editCertForm.employee_name.trim(), ee_id: editCertForm.ee_id.trim() || null, raise_type: editCertForm.raise_type, certification_name: isEditCert ? editCertForm.certification_name.trim() : '', raise_reason: !isEditCert ? editCertForm.raise_reason.trim() : null, expected_month: editCertForm.expected_month, hourly_raise, notes: editCertForm.notes.trim() || null, status: 'draft', return_comment: null }
       : c))
     setEditingCertId(null)
     setEditCertSaving(false)
-    setActionMsg(cert.status === 'returned' ? '✓ Cert raise updated — ready to resubmit.' : '✓ Cert raise updated.')
+    setActionMsg(cert.status === 'returned' ? '✓ Raise updated — ready to resubmit.' : '✓ Raise updated.')
   }
 
   async function handleUnsubmitCert(cert: CertRaise) {
@@ -2705,7 +2754,10 @@ export default function DashboardPage() {
                                         {cert.ee_id && <span className="font-mono text-xs text-gray-400">{cert.ee_id}</span>}
                                       </div>
                                       <div className="mt-1 flex items-center gap-4 text-xs text-gray-500">
-                                        <span>🎓 {cert.certification_name}</span>
+                                        {cert.raise_type === 'open_entry'
+                                          ? <><span className="font-bold px-1.5 py-0.5 rounded" style={{ background: '#fef3c7', color: '#92400e' }}>Open Entry</span><span>{cert.raise_reason}</span></>
+                                          : <span>🎓 {cert.certification_name}</span>
+                                        }
                                         <span>Expected: {MONTH_NAMES[cert.expected_month - 1]} 2027</span>
                                         <span className="font-semibold" style={{ color: '#316c7f', fontVariantNumeric: 'tabular-nums' }}>
                                           +${cert.hourly_raise.toFixed(4)}/hr
@@ -3852,6 +3904,68 @@ export default function DashboardPage() {
                                           </select>
                                         </div>
                                         <div className="flex flex-col gap-1">
+                                          <label className="text-xs font-semibold text-gray-500">Retirement %</label>
+                                          <input type="number" step="0.5" min="0" max="100" placeholder="e.g. 4"
+                                            value={editHireForm.retirement_pct}
+                                            onChange={e => setEditHireForm(f => ({ ...f, retirement_pct: e.target.value }))}
+                                            className="input-field" style={{ width: 90 }} />
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                          <label className="text-xs font-semibold text-gray-500">Phone/Mo</label>
+                                          <input type="number" step="10" min="0" placeholder="0"
+                                            value={editHireForm.phone_allowance}
+                                            onChange={e => setEditHireForm(f => ({ ...f, phone_allowance: e.target.value }))}
+                                            className="input-field" style={{ width: 90 }} />
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                          <label className="text-xs font-semibold text-gray-500">Benefits Plan</label>
+                                          <select value={editHireForm.benefits_plan}
+                                            onChange={e => setEditHireForm(f => ({ ...f, benefits_plan: e.target.value }))}
+                                            className="input-field" style={{ width: 140 }}>
+                                            <option value="">None</option>
+                                            <option value="MedSPMI">MedSPMI</option>
+                                            <option value="MedSPMIBuyUp">MedSPMI Buy Up</option>
+                                          </select>
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                          <label className="text-xs font-semibold text-gray-500">Bonus Amt</label>
+                                          <input type="number" step="100" min="0" placeholder="0"
+                                            value={editHireForm.bonus_amt}
+                                            onChange={e => setEditHireForm(f => ({ ...f, bonus_amt: e.target.value }))}
+                                            className="input-field" style={{ width: 100 }} />
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                          <label className="text-xs font-semibold text-gray-500">Bonus Mo</label>
+                                          <select value={editHireForm.bonus_month}
+                                            onChange={e => setEditHireForm(f => ({ ...f, bonus_month: e.target.value }))}
+                                            className="input-field" style={{ width: 100 }}>
+                                            {MONTH_NAMES.map((m, i) => (
+                                              <option key={i} value={i + 1}>{m}</option>
+                                            ))}
+                                          </select>
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                          <label className="text-xs font-semibold text-gray-500">Commission/Yr</label>
+                                          <input type="number" step="100" min="0" placeholder="0"
+                                            value={editHireForm.commission}
+                                            onChange={e => setEditHireForm(f => ({ ...f, commission: e.target.value }))}
+                                            className="input-field" style={{ width: 110 }} />
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                          <label className="text-xs font-semibold text-gray-500">Overtime/Yr</label>
+                                          <input type="number" step="100" min="0" placeholder="0"
+                                            value={editHireForm.overtime}
+                                            onChange={e => setEditHireForm(f => ({ ...f, overtime: e.target.value }))}
+                                            className="input-field" style={{ width: 110 }} />
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                          <label className="text-xs font-semibold text-gray-500">HSA/Yr</label>
+                                          <input type="number" step="100" min="0" placeholder="0"
+                                            value={editHireForm.hsa}
+                                            onChange={e => setEditHireForm(f => ({ ...f, hsa: e.target.value }))}
+                                            className="input-field" style={{ width: 90 }} />
+                                        </div>
+                                        <div className="flex flex-col gap-1">
                                           <label className="text-xs font-semibold text-gray-500">Notes</label>
                                           <input type="text" value={editHireForm.notes}
                                             onChange={e => setEditHireForm(f => ({ ...f, notes: e.target.value }))}
@@ -3871,7 +3985,6 @@ export default function DashboardPage() {
                                           </button>
                                         </div>
                                       </div>
-                                      <p className="text-xs text-gray-400 mt-2">Benefits, retirement, phone, and bonus settings are not shown here — delete and re-add this hire to change those.</p>
                                     </td>
                                   </tr>
                                 )}
@@ -4005,7 +4118,7 @@ export default function DashboardPage() {
                       <table className="min-w-full text-sm">
                         <thead>
                           <tr style={{ background: '#f8fafb' }}>
-                            {['Employee', 'EE ID', 'Certification', 'Expected Month', 'Hourly Raise', 'Notes', 'Status', ''].map(h => (
+                            {['Employee', 'EE ID', 'Type / Detail', 'Expected Month', 'Hourly Raise', 'Notes', 'Status', ''].map(h => (
                               <th key={h} className="text-left px-3 py-2 text-xs font-bold uppercase tracking-wider"
                                 style={{ color: '#316c7f', whiteSpace: 'nowrap' }}>{h}</th>
                             ))}
@@ -4027,7 +4140,12 @@ export default function DashboardPage() {
                                     )}
                                   </td>
                                   <td className="px-3 py-2 font-mono text-xs text-gray-500 whitespace-nowrap">{cert.ee_id || <span className="text-gray-300">—</span>}</td>
-                                  <td className="px-3 py-2 text-gray-700 whitespace-nowrap">🎓 {cert.certification_name}</td>
+                                  <td className="px-3 py-2 text-gray-700 whitespace-nowrap">
+                                    {cert.raise_type === 'open_entry'
+                                      ? <><span className="text-xs font-bold px-1.5 py-0.5 rounded mr-1.5" style={{ background: '#fef3c7', color: '#92400e' }}>Open Entry</span>{cert.raise_reason || <span className="text-gray-300">—</span>}</>
+                                      : <><span className="text-xs">🎓</span> {cert.certification_name}</>
+                                    }
+                                  </td>
                                   <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{MONTH_NAMES[cert.expected_month - 1]}</td>
                                   <td className="px-3 py-2 text-right font-semibold whitespace-nowrap"
                                     style={{ color: '#316c7f', fontVariantNumeric: 'tabular-nums' }}>
@@ -4112,6 +4230,24 @@ export default function DashboardPage() {
                                   <tr className="border-t border-red-100">
                                     <td colSpan={8} className="px-3 py-3" style={{ background: '#fff5f5' }}>
                                       <div className="flex flex-wrap gap-2 items-end">
+                                        {/* Raise type toggle */}
+                                        <div className="flex flex-col gap-1">
+                                          <label className="text-xs font-semibold text-gray-500">Raise Type</label>
+                                          <div className="flex rounded overflow-hidden border" style={{ borderColor: '#d1d5db' }}>
+                                            <button type="button"
+                                              onClick={() => setEditCertForm(f => ({ ...f, raise_type: 'certification' }))}
+                                              className="text-xs font-semibold px-3 py-1.5 transition-colors"
+                                              style={{ background: editCertForm.raise_type === 'certification' ? '#316c7f' : '#f9fafb', color: editCertForm.raise_type === 'certification' ? '#fff' : '#6b7280', border: 'none', cursor: 'pointer' }}>
+                                              Certification
+                                            </button>
+                                            <button type="button"
+                                              onClick={() => setEditCertForm(f => ({ ...f, raise_type: 'open_entry' }))}
+                                              className="text-xs font-semibold px-3 py-1.5 transition-colors"
+                                              style={{ background: editCertForm.raise_type === 'open_entry' ? '#316c7f' : '#f9fafb', color: editCertForm.raise_type === 'open_entry' ? '#fff' : '#6b7280', border: 'none', cursor: 'pointer' }}>
+                                              Open Entry
+                                            </button>
+                                          </div>
+                                        </div>
                                         <div className="flex flex-col gap-1">
                                           <label className="text-xs font-semibold text-gray-500">Employee Name <span style={{ color: '#ff930c' }}>*</span></label>
                                           <input type="text" value={editCertForm.employee_name}
@@ -4119,17 +4255,26 @@ export default function DashboardPage() {
                                             className="input-field" style={{ width: 180 }} autoFocus />
                                         </div>
                                         <div className="flex flex-col gap-1">
-                                          <label className="text-xs font-semibold text-gray-500">EE ID</label>
+                                          <label className="text-xs font-semibold text-gray-500">EE ID <span style={{ color: '#ff930c' }}>*</span></label>
                                           <input type="text" value={editCertForm.ee_id}
                                             onChange={e => setEditCertForm(f => ({ ...f, ee_id: e.target.value }))}
                                             className="input-field" style={{ width: 100 }} />
                                         </div>
-                                        <div className="flex flex-col gap-1">
-                                          <label className="text-xs font-semibold text-gray-500">Certification <span style={{ color: '#ff930c' }}>*</span></label>
-                                          <input type="text" value={editCertForm.certification_name}
-                                            onChange={e => setEditCertForm(f => ({ ...f, certification_name: e.target.value }))}
-                                            className="input-field" style={{ width: 200 }} />
-                                        </div>
+                                        {editCertForm.raise_type === 'certification' ? (
+                                          <div className="flex flex-col gap-1">
+                                            <label className="text-xs font-semibold text-gray-500">Certification <span style={{ color: '#ff930c' }}>*</span></label>
+                                            <input type="text" value={editCertForm.certification_name}
+                                              onChange={e => setEditCertForm(f => ({ ...f, certification_name: e.target.value }))}
+                                              className="input-field" style={{ width: 200 }} />
+                                          </div>
+                                        ) : (
+                                          <div className="flex flex-col gap-1">
+                                            <label className="text-xs font-semibold text-gray-500">Reason for Raise <span style={{ color: '#ff930c' }}>*</span></label>
+                                            <input type="text" placeholder="e.g. Market adjustment" value={editCertForm.raise_reason}
+                                              onChange={e => setEditCertForm(f => ({ ...f, raise_reason: e.target.value }))}
+                                              className="input-field" style={{ width: 200 }} />
+                                          </div>
+                                        )}
                                         <div className="flex flex-col gap-1">
                                           <label className="text-xs font-semibold text-gray-500">Expected Month</label>
                                           <select value={editCertForm.expected_month}
@@ -4140,12 +4285,39 @@ export default function DashboardPage() {
                                             ))}
                                           </select>
                                         </div>
-                                        <div className="flex flex-col gap-1">
-                                          <label className="text-xs font-semibold text-gray-500">Hourly Raise ($) <span style={{ color: '#ff930c' }}>*</span></label>
-                                          <input type="number" step="0.0001" min="0" value={editCertForm.hourly_raise}
-                                            onChange={e => setEditCertForm(f => ({ ...f, hourly_raise: e.target.value }))}
-                                            className="input-field" style={{ width: 110 }} />
-                                        </div>
+                                        {editCertForm.raise_type === 'open_entry' ? (
+                                          <>
+                                            <div className="flex flex-col gap-1">
+                                              <label className="text-xs font-semibold text-gray-500">Hourly Raise ($) <span style={{ color: '#ff930c' }}>*</span></label>
+                                              <input type="number" step="0.0001" min="0" placeholder="0.0000"
+                                                value={editCertForm.hourly_raise}
+                                                onChange={e => {
+                                                  const h = e.target.value
+                                                  const annual = h ? String(Math.round(parseFloat(h) * 2080 * 100) / 100) : ''
+                                                  setEditCertForm(f => ({ ...f, hourly_raise: h, annual_raise: annual }))
+                                                }}
+                                                className="input-field" style={{ width: 110 }} />
+                                            </div>
+                                            <div className="flex flex-col gap-1">
+                                              <label className="text-xs font-semibold text-gray-500">Annual Raise ($)</label>
+                                              <input type="number" step="0.01" min="0" placeholder="0.00"
+                                                value={editCertForm.annual_raise}
+                                                onChange={e => {
+                                                  const a = e.target.value
+                                                  const hourly = a ? String(Math.round((parseFloat(a) / 2080) * 10000) / 10000) : ''
+                                                  setEditCertForm(f => ({ ...f, annual_raise: a, hourly_raise: hourly }))
+                                                }}
+                                                className="input-field" style={{ width: 110 }} />
+                                            </div>
+                                          </>
+                                        ) : (
+                                          <div className="flex flex-col gap-1">
+                                            <label className="text-xs font-semibold text-gray-500">Hourly Raise ($) <span style={{ color: '#ff930c' }}>*</span></label>
+                                            <input type="number" step="0.0001" min="0" value={editCertForm.hourly_raise}
+                                              onChange={e => setEditCertForm(f => ({ ...f, hourly_raise: e.target.value }))}
+                                              className="input-field" style={{ width: 110 }} />
+                                          </div>
+                                        )}
                                         <div className="flex flex-col gap-1">
                                           <label className="text-xs font-semibold text-gray-500">Notes</label>
                                           <input type="text" value={editCertForm.notes}
@@ -4219,7 +4391,26 @@ export default function DashboardPage() {
                 <div className="bg-white rounded-lg border shadow-sm p-4" style={{ borderColor: '#e5e7eb' }}>
                   {addingCert ? (
                     <div className="space-y-3">
-                      <p className="text-xs font-bold uppercase tracking-widest" style={{ color: '#316c7f' }}>Certification Raise Details</p>
+                      <div className="flex items-center gap-3">
+                        <p className="text-xs font-bold uppercase tracking-widest" style={{ color: '#316c7f' }}>
+                          {certForm.raise_type === 'certification' ? 'Certification Raise Details' : 'Open Entry Raise Details'}
+                        </p>
+                        {/* Raise type toggle */}
+                        <div className="flex rounded overflow-hidden border" style={{ borderColor: '#d1d5db' }}>
+                          <button type="button"
+                            onClick={() => setCertForm(f => ({ ...f, raise_type: 'certification', raise_reason: '', hourly_raise: '', annual_raise: '', certification_name: '' }))}
+                            className="text-xs font-semibold px-3 py-1.5 transition-colors"
+                            style={{ background: certForm.raise_type === 'certification' ? '#316c7f' : '#f9fafb', color: certForm.raise_type === 'certification' ? '#fff' : '#6b7280', border: 'none', cursor: 'pointer' }}>
+                            Certification
+                          </button>
+                          <button type="button"
+                            onClick={() => setCertForm(f => ({ ...f, raise_type: 'open_entry', certification_name: '', hourly_raise: '', annual_raise: '' }))}
+                            className="text-xs font-semibold px-3 py-1.5 transition-colors"
+                            style={{ background: certForm.raise_type === 'open_entry' ? '#316c7f' : '#f9fafb', color: certForm.raise_type === 'open_entry' ? '#fff' : '#6b7280', border: 'none', cursor: 'pointer' }}>
+                            Open Entry
+                          </button>
+                        </div>
+                      </div>
                       <div className="flex flex-wrap gap-2 items-end">
                         <div className="flex flex-col gap-1">
                           <label className="text-xs font-semibold text-gray-500">Employee Name <span style={{ color: '#ff930c' }}>*</span></label>
@@ -4228,31 +4419,73 @@ export default function DashboardPage() {
                             className="input-field" style={{ width: 180 }} autoFocus />
                         </div>
                         <div className="flex flex-col gap-1">
-                          <label className="text-xs font-semibold text-gray-500">EE ID</label>
+                          <label className="text-xs font-semibold text-gray-500">EE ID <span style={{ color: '#ff930c' }}>*</span></label>
                           <input type="text" placeholder="Required" value={certForm.ee_id}
                             onChange={e => setCertForm(f => ({ ...f, ee_id: e.target.value }))}
                             className="input-field" style={{ width: 110 }} />
                         </div>
-                        <div className="flex flex-col gap-1">
-                          <label className="text-xs font-semibold text-gray-500">Certification <span style={{ color: '#ff930c' }}>*</span></label>
-                          <select value={certForm.certification_name}
-                            onChange={e => {
-                              const cert = APPROVED_CERTS.find(c => c.name === e.target.value)
-                              setCertForm(f => ({
-                                ...f,
-                                certification_name: e.target.value,
-                                hourly_raise: cert ? certHourlyRaise(cert.annual).toFixed(4) : '',
-                              }))
-                            }}
-                            className="input-field" style={{ width: 260 }}>
-                            <option value="">— Select certification —</option>
-                            {APPROVED_CERTS.map(c => (
-                              <option key={c.name} value={c.name}>
-                                {c.name} (+${certHourlyRaise(c.annual).toFixed(4)}/hr)
-                              </option>
-                            ))}
-                          </select>
-                        </div>
+                        {certForm.raise_type === 'certification' ? (
+                          <>
+                            <div className="flex flex-col gap-1">
+                              <label className="text-xs font-semibold text-gray-500">Certification <span style={{ color: '#ff930c' }}>*</span></label>
+                              <select value={certForm.certification_name}
+                                onChange={e => {
+                                  const c = APPROVED_CERTS.find(x => x.name === e.target.value)
+                                  setCertForm(f => ({
+                                    ...f,
+                                    certification_name: e.target.value,
+                                    hourly_raise: c ? certHourlyRaise(c.annual).toFixed(4) : '',
+                                    annual_raise: c ? String(c.annual) : '',
+                                  }))
+                                }}
+                                className="input-field" style={{ width: 260 }}>
+                                <option value="">— Select certification —</option>
+                                {APPROVED_CERTS.map(c => (
+                                  <option key={c.name} value={c.name}>
+                                    {c.name} (+${certHourlyRaise(c.annual).toFixed(4)}/hr)
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              <label className="text-xs font-semibold text-gray-500">Hourly Raise</label>
+                              <input type="text" readOnly value={certForm.hourly_raise ? `$${certForm.hourly_raise}/hr` : '—'}
+                                className="input-field text-gray-500"
+                                style={{ width: 120, background: '#f9fafb', cursor: 'default' }} />
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="flex flex-col gap-1">
+                              <label className="text-xs font-semibold text-gray-500">Reason for Raise <span style={{ color: '#ff930c' }}>*</span></label>
+                              <input type="text" placeholder="e.g. Market adjustment" value={certForm.raise_reason}
+                                onChange={e => setCertForm(f => ({ ...f, raise_reason: e.target.value }))}
+                                className="input-field" style={{ width: 220 }} />
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              <label className="text-xs font-semibold text-gray-500">Hourly Raise ($) <span style={{ color: '#ff930c' }}>*</span></label>
+                              <input type="number" step="0.0001" min="0" placeholder="0.0000"
+                                value={certForm.hourly_raise}
+                                onChange={e => {
+                                  const h = e.target.value
+                                  const annual = h ? String(Math.round(parseFloat(h) * 2080 * 100) / 100) : ''
+                                  setCertForm(f => ({ ...f, hourly_raise: h, annual_raise: annual }))
+                                }}
+                                className="input-field" style={{ width: 110 }} />
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              <label className="text-xs font-semibold text-gray-500">Annual Raise ($)</label>
+                              <input type="number" step="0.01" min="0" placeholder="0.00"
+                                value={certForm.annual_raise}
+                                onChange={e => {
+                                  const a = e.target.value
+                                  const hourly = a ? String(Math.round((parseFloat(a) / 2080) * 10000) / 10000) : ''
+                                  setCertForm(f => ({ ...f, annual_raise: a, hourly_raise: hourly }))
+                                }}
+                                className="input-field" style={{ width: 110 }} />
+                            </div>
+                          </>
+                        )}
                         <div className="flex flex-col gap-1">
                           <label className="text-xs font-semibold text-gray-500">Expected Month <span style={{ color: '#ff930c' }}>*</span></label>
                           <select value={certForm.expected_month}
@@ -4260,12 +4493,6 @@ export default function DashboardPage() {
                             className="input-field" style={{ width: 110 }}>
                             {MONTH_NAMES.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
                           </select>
-                        </div>
-                        <div className="flex flex-col gap-1">
-                          <label className="text-xs font-semibold text-gray-500">Hourly Raise</label>
-                          <input type="text" readOnly value={certForm.hourly_raise ? `$${certForm.hourly_raise}/hr` : '—'}
-                            className="input-field text-gray-500"
-                            style={{ width: 110, background: '#f9fafb', cursor: 'default' }} />
                         </div>
                         <div className="flex flex-col gap-1">
                           <label className="text-xs font-semibold text-gray-500">Notes</label>
@@ -4292,7 +4519,7 @@ export default function DashboardPage() {
                         <circle cx="7" cy="7" r="6" stroke="currentColor" strokeWidth="1.3"/>
                         <path d="M7 4v6M4 7h6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
                       </svg>
-                      Add Certification Raise
+                      Add Certification / Open Entry Raise
                     </button>
                   )}
                 </div>
