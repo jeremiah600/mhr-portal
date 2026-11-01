@@ -1619,24 +1619,15 @@ export default function DashboardPage() {
     if (targets.length === 0) { setActionMsg('No items left for you to approve.'); return }
     setBulkApprovingItems(true)
     const now = new Date().toISOString()
+    const approver = isJeremiah ? 'jeremiah' : 'joseph'
+    const { error } = await supabase.rpc('admin_bulk_approve', {
+      p_table: 'budget_line_items',
+      p_ids: targets.map(i => i.id),
+      p_approver: approver,
+    })
+    if (error) { setActionMsg('Error: ' + error.message); setBulkApprovingItems(false); return }
     const willFinish = targets.filter(item => isJeremiah ? item.approved_by_joseph : item.approved_by_jeremiah)
     const partialOnly = targets.filter(item => isJeremiah ? !item.approved_by_joseph : !item.approved_by_jeremiah)
-    const errors: string[] = []
-    if (willFinish.length > 0) {
-      const up = isJeremiah
-        ? { approved_by_jeremiah: true, jeremiah_approved_at: now, status: 'approved' as const }
-        : { approved_by_joseph: true, joseph_approved_at: now, status: 'approved' as const }
-      const results = await Promise.all(willFinish.map(i => supabase.from('budget_line_items').update(up).eq('id', i.id)))
-      results.filter(r => r.error).forEach(r => errors.push(r.error!.message))
-    }
-    if (partialOnly.length > 0) {
-      const up = isJeremiah
-        ? { approved_by_jeremiah: true, jeremiah_approved_at: now }
-        : { approved_by_joseph: true, joseph_approved_at: now }
-      const results = await Promise.all(partialOnly.map(i => supabase.from('budget_line_items').update(up).eq('id', i.id)))
-      results.filter(r => r.error).forEach(r => errors.push(r.error!.message))
-    }
-    if (errors.length > 0) { setActionMsg('Error: ' + errors.join(', ')); setBulkApprovingItems(false); return }
     const finishedIds = new Set(willFinish.map(i => i.id))
     const partialIds = new Set(partialOnly.map(i => i.id))
     setPendingItems(prev => prev
@@ -1656,24 +1647,15 @@ export default function DashboardPage() {
     if (targets.length === 0) { setActionMsg('No hires left for you to approve.'); return }
     setBulkApprovingHires(true)
     const now = new Date().toISOString()
+    const approver = isJeremiah ? 'jeremiah' : 'joseph'
+    const { error } = await supabase.rpc('admin_bulk_approve', {
+      p_table: 'budget_new_hires',
+      p_ids: targets.map(h => h.id),
+      p_approver: approver,
+    })
+    if (error) { setActionMsg('Error: ' + error.message); setBulkApprovingHires(false); return }
     const willFinish = targets.filter(hire => isJeremiah ? hire.approved_by_joseph : hire.approved_by_jeremiah)
     const partialOnly = targets.filter(hire => isJeremiah ? !hire.approved_by_joseph : !hire.approved_by_jeremiah)
-    const errors: string[] = []
-    if (willFinish.length > 0) {
-      const up = isJeremiah
-        ? { approved_by_jeremiah: true, jeremiah_approved_at: now, status: 'approved' as const }
-        : { approved_by_joseph: true, joseph_approved_at: now, status: 'approved' as const }
-      const results = await Promise.all(willFinish.map(h => supabase.from('budget_new_hires').update(up).eq('id', h.id)))
-      results.filter(r => r.error).forEach(r => errors.push(r.error!.message))
-    }
-    if (partialOnly.length > 0) {
-      const up = isJeremiah
-        ? { approved_by_jeremiah: true, jeremiah_approved_at: now }
-        : { approved_by_joseph: true, joseph_approved_at: now }
-      const results = await Promise.all(partialOnly.map(h => supabase.from('budget_new_hires').update(up).eq('id', h.id)))
-      results.filter(r => r.error).forEach(r => errors.push(r.error!.message))
-    }
-    if (errors.length > 0) { setActionMsg('Error: ' + errors.join(', ')); setBulkApprovingHires(false); return }
     const finishedIds = new Set(willFinish.map(h => h.id))
     const partialIds = new Set(partialOnly.map(h => h.id))
     setPendingHires(prev => prev
@@ -1693,24 +1675,15 @@ export default function DashboardPage() {
     if (targets.length === 0) { setActionMsg('No cert raises left for you to approve.'); return }
     setBulkApprovingCerts(true)
     const now = new Date().toISOString()
+    const approver = isJeremiah ? 'jeremiah' : 'joseph'
+    const { error } = await supabase.rpc('admin_bulk_approve', {
+      p_table: 'budget_cert_raises',
+      p_ids: targets.map(c => c.id),
+      p_approver: approver,
+    })
+    if (error) { setActionMsg('Error: ' + error.message); setBulkApprovingCerts(false); return }
     const willFinish = targets.filter(cert => isJeremiah ? cert.approved_by_joseph : cert.approved_by_jeremiah)
     const partialOnly = targets.filter(cert => isJeremiah ? !cert.approved_by_joseph : !cert.approved_by_jeremiah)
-    const errors: string[] = []
-    if (willFinish.length > 0) {
-      const up = isJeremiah
-        ? { approved_by_jeremiah: true, jeremiah_approved_at: now, status: 'approved' as const }
-        : { approved_by_joseph: true, joseph_approved_at: now, status: 'approved' as const }
-      const results = await Promise.all(willFinish.map(c => supabase.from('budget_cert_raises').update(up).eq('id', c.id)))
-      results.filter(r => r.error).forEach(r => errors.push(r.error!.message))
-    }
-    if (partialOnly.length > 0) {
-      const up = isJeremiah
-        ? { approved_by_jeremiah: true, jeremiah_approved_at: now }
-        : { approved_by_joseph: true, joseph_approved_at: now }
-      const results = await Promise.all(partialOnly.map(c => supabase.from('budget_cert_raises').update(up).eq('id', c.id)))
-      results.filter(r => r.error).forEach(r => errors.push(r.error!.message))
-    }
-    if (errors.length > 0) { setActionMsg('Error: ' + errors.join(', ')); setBulkApprovingCerts(false); return }
     const finishedIds = new Set(willFinish.map(c => c.id))
     const partialIds = new Set(partialOnly.map(c => c.id))
     setPendingCerts(prev => prev
