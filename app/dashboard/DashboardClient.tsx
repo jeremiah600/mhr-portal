@@ -1626,15 +1626,15 @@ export default function DashboardPage() {
       const up = isJeremiah
         ? { approved_by_jeremiah: true, jeremiah_approved_at: now, status: 'approved' as const }
         : { approved_by_joseph: true, joseph_approved_at: now, status: 'approved' as const }
-      const { error } = await supabase.from('budget_line_items').update(up).in('id', willFinish.map(i => i.id))
-      if (error) errors.push(error.message)
+      const results = await Promise.all(willFinish.map(i => supabase.from('budget_line_items').update(up).eq('id', i.id)))
+      results.filter(r => r.error).forEach(r => errors.push(r.error!.message))
     }
     if (partialOnly.length > 0) {
       const up = isJeremiah
         ? { approved_by_jeremiah: true, jeremiah_approved_at: now }
         : { approved_by_joseph: true, joseph_approved_at: now }
-      const { error } = await supabase.from('budget_line_items').update(up).in('id', partialOnly.map(i => i.id))
-      if (error) errors.push(error.message)
+      const results = await Promise.all(partialOnly.map(i => supabase.from('budget_line_items').update(up).eq('id', i.id)))
+      results.filter(r => r.error).forEach(r => errors.push(r.error!.message))
     }
     if (errors.length > 0) { setActionMsg('Error: ' + errors.join(', ')); setBulkApprovingItems(false); return }
     const finishedIds = new Set(willFinish.map(i => i.id))
@@ -1663,15 +1663,15 @@ export default function DashboardPage() {
       const up = isJeremiah
         ? { approved_by_jeremiah: true, jeremiah_approved_at: now, status: 'approved' as const }
         : { approved_by_joseph: true, joseph_approved_at: now, status: 'approved' as const }
-      const { error } = await supabase.from('budget_new_hires').update(up).in('id', willFinish.map(h => h.id))
-      if (error) errors.push(error.message)
+      const results = await Promise.all(willFinish.map(h => supabase.from('budget_new_hires').update(up).eq('id', h.id)))
+      results.filter(r => r.error).forEach(r => errors.push(r.error!.message))
     }
     if (partialOnly.length > 0) {
       const up = isJeremiah
         ? { approved_by_jeremiah: true, jeremiah_approved_at: now }
         : { approved_by_joseph: true, joseph_approved_at: now }
-      const { error } = await supabase.from('budget_new_hires').update(up).in('id', partialOnly.map(h => h.id))
-      if (error) errors.push(error.message)
+      const results = await Promise.all(partialOnly.map(h => supabase.from('budget_new_hires').update(up).eq('id', h.id)))
+      results.filter(r => r.error).forEach(r => errors.push(r.error!.message))
     }
     if (errors.length > 0) { setActionMsg('Error: ' + errors.join(', ')); setBulkApprovingHires(false); return }
     const finishedIds = new Set(willFinish.map(h => h.id))
@@ -1700,15 +1700,15 @@ export default function DashboardPage() {
       const up = isJeremiah
         ? { approved_by_jeremiah: true, jeremiah_approved_at: now, status: 'approved' as const }
         : { approved_by_joseph: true, joseph_approved_at: now, status: 'approved' as const }
-      const { error } = await supabase.from('budget_cert_raises').update(up).in('id', willFinish.map(c => c.id))
-      if (error) errors.push(error.message)
+      const results = await Promise.all(willFinish.map(c => supabase.from('budget_cert_raises').update(up).eq('id', c.id)))
+      results.filter(r => r.error).forEach(r => errors.push(r.error!.message))
     }
     if (partialOnly.length > 0) {
       const up = isJeremiah
         ? { approved_by_jeremiah: true, jeremiah_approved_at: now }
         : { approved_by_joseph: true, joseph_approved_at: now }
-      const { error } = await supabase.from('budget_cert_raises').update(up).in('id', partialOnly.map(c => c.id))
-      if (error) errors.push(error.message)
+      const results = await Promise.all(partialOnly.map(c => supabase.from('budget_cert_raises').update(up).eq('id', c.id)))
+      results.filter(r => r.error).forEach(r => errors.push(r.error!.message))
     }
     if (errors.length > 0) { setActionMsg('Error: ' + errors.join(', ')); setBulkApprovingCerts(false); return }
     const finishedIds = new Set(willFinish.map(c => c.id))
