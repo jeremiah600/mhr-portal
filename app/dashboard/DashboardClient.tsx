@@ -327,6 +327,7 @@ export default function DashboardPage() {
   const [mktSubmittingId, setMktSubmittingId] = useState<string | null>(null)
   const [mktApprovingId, setMktApprovingId] = useState<string | null>(null)
   const [mktReturningId, setMktReturningId] = useState<string | null>(null)
+  const [bulkApprovingMarketing, setBulkApprovingMarketing] = useState(false)
   const [mktReturnComment, setMktReturnComment] = useState<Record<string, string>>({})
 
   // Inline edit state for returned items
@@ -1893,6 +1894,26 @@ export default function DashboardPage() {
     setMktSaving(false)
   }
 
+  async function handleBulkApproveMarketing() {
+    const isJeremiah = userEmail === 'jbogdon@myhrpros.com'
+    const targets = mktItems.filter(i =>
+      i.status === 'submitted' &&
+      (isJeremiah ? !i.approved_by_jeremiah : !i.approved_by_joseph)
+    )
+    if (targets.length === 0) { setActionMsg('No marketing items left for you to approve.'); return }
+    setBulkApprovingMarketing(true)
+    const approver = isJeremiah ? 'jeremiah' : 'joseph'
+    const { error } = await supabase.rpc('admin_bulk_approve', {
+      p_table: 'marketing_budget_items',
+      p_ids: targets.map(i => i.id),
+      p_approver: approver,
+    })
+    if (error) { setActionMsg('Error: ' + error.message); setBulkApprovingMarketing(false); return }
+    await loadMarketingData()
+    setActionMsg(`✓ Approved ${targets.length} marketing item${targets.length !== 1 ? 's' : ''}.`)
+    setBulkApprovingMarketing(false)
+  }
+
   async function handleMktUnsubmit(id: string) {
     const { error } = await supabase.from('marketing_budget_items')
       .update({ status: 'draft', submitted_at: null }).eq('id', id)
@@ -2095,6 +2116,27 @@ export default function DashboardPage() {
                 Submission window is <strong>closed</strong>. You can save items but cannot submit until it's opened.
               </div>
             )}
+
+            {/* Admin — Approve All marketing bar */}
+            {isAdmin && (() => {
+              const isJeremiah = userEmail === 'jbogdon@myhrpros.com'
+              const pendingForMe = mktItems.filter(i =>
+                i.status === 'submitted' &&
+                (isJeremiah ? !i.approved_by_jeremiah : !i.approved_by_joseph)
+              ).length
+              return pendingForMe > 0 ? (
+                <div className="bg-white rounded-lg border px-4 py-3 flex items-center justify-between shadow-sm"
+                  style={{ borderColor: '#316c7f', background: 'rgba(49,108,127,.05)' }}>
+                  <div className="text-sm font-semibold" style={{ color: '#1e4757' }}>
+                    {pendingForMe} marketing item{pendingForMe !== 1 ? 's' : ''} pending your approval
+                  </div>
+                  <button onClick={handleBulkApproveMarketing} disabled={bulkApprovingMarketing}
+                    className="btn-primary text-sm px-4 py-2">
+                    {bulkApprovingMarketing ? 'Approving…' : `Approve All (${pendingForMe})`}
+                  </button>
+                </div>
+              ) : null
+            })()}
 
             {/* Category accordions */}
             {/* Column headers */}
