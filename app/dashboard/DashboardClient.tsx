@@ -354,6 +354,11 @@ export default function DashboardPage() {
   const [adminEditItemForm, setAdminEditItemForm] = useState({ amount: '', admin_note: '' })
   const [adminEditItemSaving, setAdminEditItemSaving] = useState(false)
 
+  // Admin actions on approved recurring groups (edit amount / recall all months)
+  const [groupAdminAction, setGroupAdminAction] = useState<{ gid: string; mode: 'edit' | 'recall' } | null>(null)
+  const [groupAdminForm, setGroupAdminForm] = useState({ amount: '', note: '' })
+  const [groupAdminSaving, setGroupAdminSaving] = useState(false)
+
   // Recurring group batch edit state
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null)
   const [editGroupForm, setEditGroupForm] = useState({ description: '', employee_name: '', vendor: '', notes: '', amount: '' })
@@ -1144,6 +1149,55 @@ export default function DashboardPage() {
     setAdminEditItemSaving(false)
     await logAudit('admin_edit', item.id, { new_amount: newAmount, reason: adminNote })
     setActionMsg('✓ Amount updated on approved item.')
+  }
+
+  // ── Admin: recall all approved months of a recurring group ────────────────
+
+  async function handleRecallGroup(groupId: string, note: string) {
+    if (!note.trim()) { setActionMsg('Add a note explaining why before recalling.'); return }
+    const items = lineItems.filter(i => i.recurring_group_id === groupId && i.status === 'approved' && !isPastMonth(i.month))
+    if (items.length === 0) { setActionMsg('No approved months left to recall in this group.'); return }
+    const ids = items.map(i => i.id)
+    setGroupAdminSaving(true)
+    await supabase.from('budget_lines').delete().in('budget_line_item_id', ids)
+    const { error } = await supabase.from('budget_line_items').update({
+      status: 'returned',
+      approved_by_jeremiah: false, jeremiah_approved_at: null,
+      approved_by_joseph: false, joseph_approved_at: null,
+      return_comment: `[Recalled by admin] ${note}`,
+      admin_note: note,
+    }).in('id', ids)
+    if (error) { setActionMsg(`Error: ${error.message}`); setGroupAdminSaving(false); return }
+    setLineItems(prev => prev.map(i => ids.includes(i.id)
+      ? { ...i, status: 'returned', approved_by_jeremiah: false, approved_by_joseph: false, return_comment: `[Recalled by admin] ${note}` }
+      : i))
+    setGroupAdminSaving(false)
+    setGroupAdminAction(null)
+    setGroupAdminForm({ amount: '', note: '' })
+    await logAudit('recall', undefined, { group_id: groupId, count: ids.length, note })
+    setActionMsg(`✓ ${ids.length} month${ids.length > 1 ? 's' : ''} recalled and returned to director for revision.`)
+  }
+
+  // ── Admin: edit monthly amount on all approved months of a recurring group ─
+
+  async function handleAdminEditGroup(groupId: string, newAmount: number, adminNote: string) {
+    if (!adminNote.trim()) { setActionMsg('Reason is required when editing an approved item.'); return }
+    if (!newAmount || newAmount <= 0) { setActionMsg('Enter a valid amount.'); return }
+    const items = lineItems.filter(i => i.recurring_group_id === groupId && i.status === 'approved' && !isPastMonth(i.month))
+    if (items.length === 0) { setActionMsg('No approved months left to edit in this group.'); return }
+    const ids = items.map(i => i.id)
+    setGroupAdminSaving(true)
+    const { error } = await supabase.from('budget_line_items').update({
+      amount: newAmount, admin_note: adminNote,
+    }).in('id', ids)
+    if (error) { setActionMsg(`Error: ${error.message}`); setGroupAdminSaving(false); return }
+    await supabase.from('budget_lines').update({ amount: newAmount }).in('budget_line_item_id', ids)
+    setLineItems(prev => prev.map(i => ids.includes(i.id) ? { ...i, amount: newAmount } : i))
+    setGroupAdminSaving(false)
+    setGroupAdminAction(null)
+    setGroupAdminForm({ amount: '', note: '' })
+    await logAudit('admin_edit', undefined, { group_id: groupId, count: ids.length, new_amount: newAmount, reason: adminNote })
+    setActionMsg(`✓ Amount updated on ${ids.length} approved month${ids.length > 1 ? 's' : ''}.`)
   }
 
   // ── Admin: Option A — recall approved hire ────────────────────────────────
@@ -2848,6 +2902,73 @@ export default function DashboardPage() {
 
   const deptLabel = deptNames[activeDept] ?? activeDept
   const isAdmin = profile.role === 'admin'
+
+  // Admin edit / recall form rows for a single approved line item (standalone or one month of a group)
+  function renderAdminItemForms(item: LineItem) {
+    return (
+      <>
+      {adminEditItemId === item.id && (
+        <tr className="border-t border-blue-100">
+          <td colSpan={8} className="px-3 py-3" style={{ background: '#f0f7fa' }}>
+            <div className="flex flex-wrap gap-2 items-end">
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-semibold text-gray-500">New Amount <span style={{ color: '#ff930c' }}>*</span></label>
+                <input type="number" step="0.01" min="0" autoFocus
+                  value={adminEditItemForm.amount}
+                  onChange={e => setAdminEditItemForm(f => ({ ...f, amount: e.target.value }))}
+                  className="input-field" style={{ width: 120 }} />
+              </div>
+              <div className="flex flex-col gap-1" style={{ flex: 1, minWidth: 220 }}>
+                <label className="text-xs font-semibold text-gray-500">Reason for change <span style={{ color: '#ff930c' }}>*</span></label>
+                <input type="text" placeholder="e.g. vendor quoted lower price"
+                  value={adminEditItemForm.admin_note}
+                  onChange={e => setAdminEditItemForm(f => ({ ...f, admin_note: e.target.value }))}
+                  className="input-field" style={{ width: '100%' }} />
+              </div>
+              <div className="flex gap-2 items-center mt-1">
+                <button onClick={() => handleAdminEditItem(item, parseFloat(adminEditItemForm.amount), adminEditItemForm.admin_note)}
+                  disabled={adminEditItemSaving}
+                  className="text-xs font-bold px-3 py-1.5 rounded whitespace-nowrap"
+                  style={{ background: '#316c7f', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                  {adminEditItemSaving ? 'Saving…' : '✓ Update Amount'}
+                </button>
+                <button onClick={() => setAdminEditItemId(null)}
+                  className="text-xs text-gray-400 hover:text-gray-600 whitespace-nowrap"
+                  style={{ background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
+              </div>
+            </div>
+          </td>
+        </tr>
+      )}
+      {recallingItemId === item.id && (
+        <tr className="border-t border-amber-100">
+          <td colSpan={8} className="px-3 py-3" style={{ background: '#fffbeb' }}>
+            <div className="flex flex-wrap gap-2 items-end">
+              <div className="flex flex-col gap-1" style={{ flex: 1, minWidth: 260 }}>
+                <label className="text-xs font-semibold text-gray-500">Reason for recalling <span style={{ color: '#ff930c' }}>*</span></label>
+                <input type="text" placeholder="e.g. budget overrun — please revise amount" autoFocus
+                  value={recallItemNote}
+                  onChange={e => setRecallItemNote(e.target.value)}
+                  className="input-field" style={{ width: '100%' }} />
+              </div>
+              <div className="flex gap-2 items-center mt-1">
+                <button onClick={() => handleRecallItem(item, recallItemNote)}
+                  disabled={recallingItemId === item.id && !recallItemNote.trim()}
+                  className="text-xs font-bold px-3 py-1.5 rounded whitespace-nowrap"
+                  style={{ background: '#d97706', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                  ↩ Confirm Recall
+                </button>
+                <button onClick={() => setRecallingItemId(null)}
+                  className="text-xs text-gray-400 hover:text-gray-600 whitespace-nowrap"
+                  style={{ background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
+              </div>
+            </div>
+          </td>
+        </tr>
+      )}
+      </>
+    )
+  }
   const expDraftCount = lineItems.filter(i => i.status === 'draft' || i.status === 'returned').length
   const hireDraftCount = newHires.filter(h => h.status === 'draft' || h.status === 'returned').length
   const certDraftCount = certRaises.filter(c => c.status === 'draft' || c.status === 'returned').length
@@ -3151,6 +3272,8 @@ export default function DashboardPage() {
                                     const hasReturned = groupItems.some(i => i.status === 'returned')
                                     const editableItems = groupItems.filter(i => i.status === 'draft' || i.status === 'returned')
                                     const submittableItems = groupItems.filter(i => (i.status === 'draft' || i.status === 'returned') && !isPastMonth(i.month))
+                                    const adminGroupItems = isAdmin ? groupItems.filter(i => i.status === 'approved' && !isPastMonth(i.month)) : []
+                                    const groupAdminMode = groupAdminAction?.gid === gid ? groupAdminAction.mode : null
                                     const isEditingGroup = editingGroupId === gid
                                     const first = groupItems[0]
                                     const groupTotal = groupItems.reduce((s, i) => s + i.amount, 0)
@@ -3194,6 +3317,28 @@ export default function DashboardPage() {
                                                     </svg>
                                                   </button>
                                                 )}
+                                              </>)}
+                                              {adminGroupItems.length > 0 && !isEditingGroup && (<>
+                                                <button onClick={() => {
+                                                  const opening = groupAdminMode !== 'edit'
+                                                  setGroupAdminAction(opening ? { gid, mode: 'edit' } : null)
+                                                  if (opening) setGroupAdminForm({ amount: String(adminGroupItems[0].amount), note: '' })
+                                                }}
+                                                  className="text-xs font-bold px-2 py-0.5 rounded transition-colors whitespace-nowrap shrink-0"
+                                                  style={{ background: groupAdminMode === 'edit' ? '#f3f4f6' : 'rgba(49,108,127,.15)', color: groupAdminMode === 'edit' ? '#6b7280' : '#316c7f', border: 'none', cursor: 'pointer' }}
+                                                  title="Change the monthly amount on every approved month in this group">
+                                                  {groupAdminMode === 'edit' ? '✕ Cancel' : '✎ Edit Amount'}
+                                                </button>
+                                                <button onClick={() => {
+                                                  const opening = groupAdminMode !== 'recall'
+                                                  setGroupAdminAction(opening ? { gid, mode: 'recall' } : null)
+                                                  if (opening) setGroupAdminForm({ amount: '', note: '' })
+                                                }}
+                                                  className="text-xs font-bold text-amber-600 hover:text-amber-700 transition-colors whitespace-nowrap shrink-0"
+                                                  style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+                                                  title="Recall every approved month in this group back to the director">
+                                                  {groupAdminMode === 'recall' ? '✕ Cancel' : '↩ Recall Group'}
+                                                </button>
                                               </>)}
                                             </div>
                                           </td>
@@ -3242,6 +3387,49 @@ export default function DashboardPage() {
                                                   </button>
                                                   <button onClick={() => setEditingGroupId(null)}
                                                     className="text-xs text-gray-400 hover:text-gray-600 transition-colors whitespace-nowrap"
+                                                    style={{ background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
+                                                </div>
+                                              </div>
+                                            </td>
+                                          </tr>
+                                        )}
+                                        {/* Admin: edit amount / recall all approved months */}
+                                        {groupAdminMode && (
+                                          <tr className={groupAdminMode === 'edit' ? 'border-t border-blue-100' : 'border-t border-amber-100'}>
+                                            <td colSpan={8} className="px-3 py-3" style={{ background: groupAdminMode === 'edit' ? '#f0f7fa' : '#fffbeb' }}>
+                                              <div className="flex flex-wrap gap-2 items-end">
+                                                {groupAdminMode === 'edit' && (
+                                                  <div className="flex flex-col gap-1">
+                                                    <label className="text-xs font-semibold text-gray-500">New Amount / month <span style={{ color: '#ff930c' }}>*</span></label>
+                                                    <input type="number" step="0.01" min="0" autoFocus
+                                                      value={groupAdminForm.amount}
+                                                      onChange={e => setGroupAdminForm(f => ({ ...f, amount: e.target.value }))}
+                                                      className="input-field" style={{ width: 120 }} />
+                                                  </div>
+                                                )}
+                                                <div className="flex flex-col gap-1" style={{ flex: 1, minWidth: 260 }}>
+                                                  <label className="text-xs font-semibold text-gray-500">
+                                                    {groupAdminMode === 'edit' ? 'Reason for change' : 'Reason for recalling'} <span style={{ color: '#ff930c' }}>*</span>
+                                                  </label>
+                                                  <input type="text" autoFocus={groupAdminMode === 'recall'}
+                                                    placeholder={groupAdminMode === 'edit' ? 'e.g. vendor quoted lower price' : 'e.g. budget overrun — please revise'}
+                                                    value={groupAdminForm.note}
+                                                    onChange={e => setGroupAdminForm(f => ({ ...f, note: e.target.value }))}
+                                                    className="input-field" style={{ width: '100%' }} />
+                                                </div>
+                                                <div className="flex gap-2 items-center mt-1">
+                                                  <button onClick={() => groupAdminMode === 'edit'
+                                                      ? handleAdminEditGroup(gid, parseFloat(groupAdminForm.amount), groupAdminForm.note)
+                                                      : handleRecallGroup(gid, groupAdminForm.note)}
+                                                    disabled={groupAdminSaving || !groupAdminForm.note.trim()}
+                                                    className="text-xs font-bold px-3 py-1.5 rounded whitespace-nowrap"
+                                                    style={{ background: groupAdminMode === 'edit' ? '#316c7f' : '#d97706', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                                                    {groupAdminSaving ? 'Saving…' : groupAdminMode === 'edit'
+                                                      ? `✓ Update ${adminGroupItems.length} Month${adminGroupItems.length > 1 ? 's' : ''}`
+                                                      : `↩ Recall ${adminGroupItems.length} Month${adminGroupItems.length > 1 ? 's' : ''}`}
+                                                  </button>
+                                                  <button onClick={() => setGroupAdminAction(null)}
+                                                    className="text-xs text-gray-400 hover:text-gray-600 whitespace-nowrap"
                                                     style={{ background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
                                                 </div>
                                               </div>
@@ -3299,6 +3487,26 @@ export default function DashboardPage() {
                                                         style={{ background: 'none', border: 'none', cursor: 'pointer' }}
                                                         title="Recall to draft">↩</button>
                                                     )}
+                                                    {gItem.status === 'approved' && isAdmin && (<>
+                                                      <button onClick={() => {
+                                                        const opening = adminEditItemId !== gItem.id
+                                                        setAdminEditItemId(opening ? gItem.id : null)
+                                                        if (opening) { setAdminEditItemForm({ amount: String(gItem.amount), admin_note: '' }); setRecallingItemId(null) }
+                                                      }}
+                                                        className="text-xs font-bold px-2 py-0.5 rounded transition-colors whitespace-nowrap"
+                                                        style={{ background: adminEditItemId === gItem.id ? '#f3f4f6' : 'rgba(49,108,127,.1)', color: adminEditItemId === gItem.id ? '#6b7280' : '#316c7f', border: 'none', cursor: 'pointer' }}
+                                                        title="Edit amount for this month">
+                                                        {adminEditItemId === gItem.id ? '✕' : '✎'}
+                                                      </button>
+                                                      <button onClick={() => {
+                                                        const opening = recallingItemId !== gItem.id
+                                                        setRecallingItemId(opening ? gItem.id : null)
+                                                        if (opening) { setRecallItemNote(''); setAdminEditItemId(null) }
+                                                      }}
+                                                        className="text-xs text-amber-600 hover:text-amber-700 transition-colors whitespace-nowrap"
+                                                        style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+                                                        title="Recall this month back to the director">↩</button>
+                                                    </>)}
                                                     {canDelete && !isEditing && (
                                                       <button onClick={() => handleDeleteItem(gItem)}
                                                         className="text-gray-300 hover:text-red-500 transition-colors"
@@ -3312,6 +3520,7 @@ export default function DashboardPage() {
                                                   </div>
                                                 </td>
                                               </tr>
+                                              {renderAdminItemForms(gItem)}
                                               {isEditing && (
                                                 <tr className="border-t border-red-100">
                                                   <td colSpan={8} className="px-3 py-3" style={{ background: '#fff5f5' }}>
@@ -3467,65 +3676,7 @@ export default function DashboardPage() {
                                             </div>
                                           </td>
                                         </tr>
-                                        {adminEditItemId === item.id && (
-                                          <tr className="border-t border-blue-100">
-                                            <td colSpan={8} className="px-3 py-3" style={{ background: '#f0f7fa' }}>
-                                              <div className="flex flex-wrap gap-2 items-end">
-                                                <div className="flex flex-col gap-1">
-                                                  <label className="text-xs font-semibold text-gray-500">New Amount <span style={{ color: '#ff930c' }}>*</span></label>
-                                                  <input type="number" step="0.01" min="0" autoFocus
-                                                    value={adminEditItemForm.amount}
-                                                    onChange={e => setAdminEditItemForm(f => ({ ...f, amount: e.target.value }))}
-                                                    className="input-field" style={{ width: 120 }} />
-                                                </div>
-                                                <div className="flex flex-col gap-1" style={{ flex: 1, minWidth: 220 }}>
-                                                  <label className="text-xs font-semibold text-gray-500">Reason for change <span style={{ color: '#ff930c' }}>*</span></label>
-                                                  <input type="text" placeholder="e.g. vendor quoted lower price"
-                                                    value={adminEditItemForm.admin_note}
-                                                    onChange={e => setAdminEditItemForm(f => ({ ...f, admin_note: e.target.value }))}
-                                                    className="input-field" style={{ width: '100%' }} />
-                                                </div>
-                                                <div className="flex gap-2 items-center mt-1">
-                                                  <button onClick={() => handleAdminEditItem(item, parseFloat(adminEditItemForm.amount), adminEditItemForm.admin_note)}
-                                                    disabled={adminEditItemSaving}
-                                                    className="text-xs font-bold px-3 py-1.5 rounded whitespace-nowrap"
-                                                    style={{ background: '#316c7f', color: '#fff', border: 'none', cursor: 'pointer' }}>
-                                                    {adminEditItemSaving ? 'Saving…' : '✓ Update Amount'}
-                                                  </button>
-                                                  <button onClick={() => setAdminEditItemId(null)}
-                                                    className="text-xs text-gray-400 hover:text-gray-600 whitespace-nowrap"
-                                                    style={{ background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
-                                                </div>
-                                              </div>
-                                            </td>
-                                          </tr>
-                                        )}
-                                        {recallingItemId === item.id && (
-                                          <tr className="border-t border-amber-100">
-                                            <td colSpan={8} className="px-3 py-3" style={{ background: '#fffbeb' }}>
-                                              <div className="flex flex-wrap gap-2 items-end">
-                                                <div className="flex flex-col gap-1" style={{ flex: 1, minWidth: 260 }}>
-                                                  <label className="text-xs font-semibold text-gray-500">Reason for recalling <span style={{ color: '#ff930c' }}>*</span></label>
-                                                  <input type="text" placeholder="e.g. budget overrun — please revise amount" autoFocus
-                                                    value={recallItemNote}
-                                                    onChange={e => setRecallItemNote(e.target.value)}
-                                                    className="input-field" style={{ width: '100%' }} />
-                                                </div>
-                                                <div className="flex gap-2 items-center mt-1">
-                                                  <button onClick={() => handleRecallItem(item, recallItemNote)}
-                                                    disabled={recallingItemId === item.id && !recallItemNote.trim()}
-                                                    className="text-xs font-bold px-3 py-1.5 rounded whitespace-nowrap"
-                                                    style={{ background: '#d97706', color: '#fff', border: 'none', cursor: 'pointer' }}>
-                                                    ↩ Confirm Recall
-                                                  </button>
-                                                  <button onClick={() => setRecallingItemId(null)}
-                                                    className="text-xs text-gray-400 hover:text-gray-600 whitespace-nowrap"
-                                                    style={{ background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
-                                                </div>
-                                              </div>
-                                            </td>
-                                          </tr>
-                                        )}
+                                        {renderAdminItemForms(item)}
                                         {isEditing && (
                                           <tr className="border-t border-red-100">
                                             <td colSpan={8} className="px-3 py-3" style={{ background: '#fff5f5' }}>
